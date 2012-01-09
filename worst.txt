@@ -1,0 +1,4 @@
+Nastiest bugs:
+
+I had the macro_cnt put right after the forth offsets, so when adding a
+word to the forth dictionary, the macro_cnt got clobbered with the offset.

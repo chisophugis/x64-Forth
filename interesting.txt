@@ -1,0 +1,1 @@
+An Array Mapped Trie would make a very efficient symbol table.

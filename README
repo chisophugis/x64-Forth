@@ -1,0 +1,75 @@
+This is a Forth compiler/interpreter.
+
+It will only run on x86-64 Linux. You will need YASM and probably Zsh. I
+have tested it on at least one other computer meeting those requirements
+and it worked.
+
+Quickstart:
+	run ./do and you should see the colored source printer. see below
+	for a rundown of what each of the files is for.
+
+Turn back now if:
+	- you don't understand Forth
+	- you don't understand x86(-64) at the machine code level
+
+A couple tips:
+	- all numbers are in hex
+	- 48 is REX.W which extends operations to 64-bits
+	- the comma character usually indicates that a word compiles
+	  something into the dictionary. e.g. `rel32,` or `call,`.
+	- x86 is little-endian so e.g. in `ad48 2,` the 48 will precede the
+	  ad in the dictionary (e.g. it will compile REX.W LODS).
+	- grep for 'DOC' in the .asm files in order to find snippets of
+	  valuable documentation.
+
+Here's a rundown of the files:
+
+			Assembler
+The *.asm files were developed in this progression (each one building on
+the last one):
+key.asm -> key1.asm -> ... -> key4.asm ->
+compile.asm -> compile1.asm -> ... -> compile4.asm ->
+editor.asm -> editor1.asm
+
+The progression is an interesting example of how to approach a brand new
+system in a development environment that you have never been exposed to
+before.
+
+editor.asm and editor1.asm definitely exhibit a need for a complete
+rewrite, which will happen when I have written a full editor for the
+colored source code, so that I can properly incorporate the color
+throughout the design.
+
+			Forth
+basics.fth - fundamental definitions (if, for, next, etc). Make sure to
+	have your Intel manuals handy.
+keymaps.fth - a simple keymapping library (used in colorconsole.fth and
+	coloreditor.fth); more generally it just builds a jumptable.
+term.fth - facilities for manipulating the terminal
+data.fth - basic definitions for defining data
+colorconsole.fth - a rudimentary console. highlights the word if it is a
+	valid word.
+coloreditor.fth - not a full editor, but does print properly the colored
+	source format (this functionality is what ./do currently does, the
+	source is embedded in the asm file)
+F.fth - the classic example from Starting Forth
+
+			Scripts
+./do - run the current thing that I'm working on
+./try - build the files I currently need
+./maps - print out the last 'a.out' process's memory map
+./inspect - attaches gdb to the last 'a.out' invocation
+./deps.dot - shows a simple mind map graph that I used for brainstorming
+	(it's really a graphviz dot file with some magic to make executing
+	it display the graph)
+
+			Other files
+colorforth.txt - a listing of CHM's colorForth that inspired a lot of the
+	design of this Forth. I have annotated some parts of it.
+COLOR.ASM - CHM's actual colorForth source, with some annotations by me
+	(most of my annotations are in colorforth.txt)
+CHM/ - the full colorForth source from CHM's website, kept in original
+	condition (i.e. not annotated).
+*.txt - random notes that I left to myself
+inf.c - experiment for getting writable and executable pages.
+unistd_64.inc - syscall numbers; generated from unistd_64.h

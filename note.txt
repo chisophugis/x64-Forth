@@ -1,0 +1,224 @@
+create does> will be like
+
+; this is the  address that is jumped to when this word is executed,
+; e.g. by the inner interpreter
+entry:
+	push address of data onto the stack
+	jmp (does> portion) (does> portion contains the ret)
+
+; on another page, away from executable code
+data:
+	stuff that was e.g. dropped by ,
+
+
+Use case: 'CREATE foo 5 , 7 ,'
+CREATE is in the run-time dictionary, it makes a run-time dictionary entry
+for 'foo' whose CodeP points to newly placed instruction in the code
+region that do this:
+
+	push address of data onto the stack (e.g. current value of HERE)
+
+This can be implemented position-independently with an RIP-relative LEA as
+long as the code region is at a fixed position relative to the data region.
+Note that HERE contains the next free spot in the *data* dictionary. The
+code "dictionary" just contains the code pointed to by CodeP's.
+
+
+Use case: ': foo CREATE ~~~ DOES> ~~~ ;'
+You look in the compiling dictionary (which is only searched when
+compiling) and you don't find CREATE. You find CREATE in the run-time
+dictionary, so you embed a call to it (i.e. in an indirect threaded forth
+this is the equivalent of dropping the address of CREATE's CFA)
+
+Now the tricky part is DOES> . DOES> embeds code that will embed code (!)
+in the created dictionary entry which does
+
+	jmp (stuff after *this* DOES>)
+
+That is, it embeds code which will compile a jump to the code that is put
+down for *this* colon definition ('foo'), after DOES>. So one way to think
+about it is that the entries created by 'foo' will behave like normal
+CREATE entries, but then they will perform a JMP to the code that follows
+DOES> . Make sure that you understand that this means that entries created
+by 'foo' will return with  the RET compiled by the semicolon ending the
+definition of 'foo' .
+
+Conveniently, this code can look like:
+	...
+	call _CREATE ; *(CodeP of CREATE)
+	; code of CREATE portion of 'foo'
+	call __DOES ; magic routine written in assembler
+	; code of DOES> portion of 'foo'
+	...
+	ret ; compiled by the semicolon ending the definition of 'foo'
+
+because the value of RIP that is pushed on the stack for this call will be
+the correct address to embed the JMP to.
+
+Note that besides the dictionary entry header, there is no data placed in
+the data region for 'foo'.
+
+
+
+
+Anatomy of a run-time dictionary entry:
+
+	Link
+	CodeP: Pointer to code that should be executed
+	Name={len:chars}
+	align 8
+
+Note that CodeP is the address of code that when compiling another colon
+definition's code, we would say 'call rel32=<thatCodeP-rip>' to embed.
+
+Actually, that is the anatomy of a compiling dictionary entry too. It's
+just that entries in the compiling dictionary are linked together as a
+separate logical "dictionary", although they share the same region of
+memory to grow into.
+
+
+
+= To interpret a word, you look up the word in the run-time dictionary, and
+do an indirect call to its CodeP.
+= To compile a (normal, run-time) word, you look up the word in the
+run-time dictionary, then embed a call to the address stored in its CodeP.
+
+Remark: ':' is in the run-time dictionary, and what it does is create a
+dictionary entry for the next word and switch over to compilation mode
+(call ']').
+Remark: '[' is in the compiling dictionary and switches to interpret mode.
+
+
+will need to keep track of (DATA_)HERE and CODE_HERE. HERE contains a
+pointer to the next free space in the data region (where dictionary headers
+and data are compiled), while CODE_HERE contains a pointer to the next free
+byte in the code region (the executable code page that we write new
+executable code into).
+
+One of the most subtle and important subroutines that we need is one which,
+given an address Addr and and a CodeP, calculates the relative displacement
+necessary to embed a correct CALL rel32 into the given address. The machine
+code for CALL rel32 is E8 rel32 == 5 bytes. So RIP = Addr + 5 when we are
+on this instruction. So we need to calculate a value X such that RIP + X =
+CodeP . Evidently the relative offset calculation we need to make is
+
+	rel32 = CodeP - (Addr + 5) = CodeP - Addr - 5
+
+
+
+
+
+
+Note to self: Don't do IF ~~~ THEN. do IF ~~~ FI. That is, the closing
+word of IF should be FI, not THEN, since FI avoids confusion with the
+meaning of THEN in other languages (and intuitively, at some level).
+
+
+Note: Will have to write a loader. Ideally, this will just mmap a file into
+memory and fix up a couple relocations. CodeP's and links between
+dictionary entries will have to be relocated. They are easy, just store offsets
+from the base of the code region and data region in them, and add the
+appropriate base to each one. Something like
+
+	base[i] = base + base[i]
+
+Also, code created by CREATE that pushes an offset on the stack will be
+naturally position-independent as long as the code and data regions are at
+fixed offsets from each other. This has to be the case for the JMPs that
+DOES> creates to work. The other code should be naturally
+position-independent since all of the other CALLs and JMPs are
+RIP-relative.
+
+The system should be designed so that the actual initial assembler
+bootstrap file will create a raw binary file that gets relocated like this,
+in order to keep the system consistent.
+
+If the data and code segments need to be moved individually, then we can
+just search through the dictionary for CodeP's that point to JMP
+instructions that push &CodeP+8 onto the stack and relocated them.
+
+Tip: I think you can get RIP into a register by doing an RIP-relative LEA.
+
+
+Peephole optimizations:
+	DUP 1 = IF ~~~ FI ~~~ ;
+	naively converts to:
+	DUP:
+		lea rsi, [rsi - 4]
+		mov [rsi], rax
+	1:
+		lea rsi, [rsi - 4]
+		mov [rsi], rax
+		mov eax, 1
+	=:
+		cmp rax, [rsi]
+		lodsq ; S -> T, T discarded, ESI:=ESI-8
+		cmove eax, -1
+		cmovne eax, 0
+	IF:
+		test rax, rax
+		jz FI ; go to FI if false
+		~~~
+	FI:
+		~~~
+		ret
+
+	This could instead be much more efficiently coded as:
+	DUP 1 =:
+		cmp rax, 1
+		jz FI
+	IF:
+		~~~
+	FI:
+		~~~
+		ret
+
+	I think that the IF compiling word should be the one in charge of
+	this peephole optimization, because it is the word that depends on
+	the ZF flag, which means that the result of the preceding
+	comparison is only needed for its effect on the flag.
+
+	Then again ... how often am I going to write code like that? Is the
+	additional complexity going to be justified?
+Simpler Solution: literal numbers always go on the stack, and you use #= or
+#< to do tests against literal numbers, which when compiling, take the
+number off the stack and bake them in as a literal to the instruction.
+
+
+For the graphics buffer (and I/O), do all that in a separate process and
+use IPC (e.g. shmem) to map an image buffer into the Forth process's
+address space. Also, e.g. send all the received keystrokes in a pipe to
+Forth (the interface will be the same as reading from stdin then!). This
+keeps all the crud separate from the Forth.
+
+
+
+
+
+You can do most of the work directly inside an assembler file. One page of
+header and bookkeeping (adr of CODE-HERE and DATA-HERE, info for loading,
+which source files to read in and where to put the source, etc), one page
+of code, one page of hand-written dictionary.
+Pad out pages with this, or something similar.
+	times (4096 - ($-$$)) db 0
+
+
+Need a compiling dictionary and a run-time (interpreted) dictionary
+
+
+
+
+
+It will be a win to make ?dup a primitive (even a macro).
+
+maybe keep a register which is a bitfield containing certain status
+information? (e.g. when the last instruction put something on the stack?
+
+
+
+
+
+look at block 28 here:
+http://www.dnd.utwente.nl/~tim/colorforth/Raystm2/mv050314.html
+this is a super simple way to get macros into the run-time forth dictionary
+

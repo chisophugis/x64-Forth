@@ -1,0 +1,5 @@
+#!/usr/bin/env zsh
+
+yasm -g dwarf2 -f elf64 $1 && ld $1:r.o
+# this should will work in the absence of zsh
+#yasm -g dwarf2 -f elf64 $1 && ld $(basename $1 .asm).o

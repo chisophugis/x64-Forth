@@ -1,0 +1,4 @@
+One-line lambda library for my keymapper.
+	: [[ here ] ; macro : ]] postpone ; ; forth
+Usage is something like:
+	ascii h [[ left 1 move ]] mapkey

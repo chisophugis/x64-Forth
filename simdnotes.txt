@@ -1,0 +1,66 @@
+different ways of doing the same thing
+
+	mov ecx, 0xF0F0F0F0
+	shrd rcx, rcx, 32 ; fill up the rest
+
+	mov rcx, 0xF0F0F0F0F0F0F0F0
+
+	pcmpeqw mm0, mm0 ; set mm0 to all 0xFFF...
+	psllw mm0, 8
+	movq rax, mm0
+
+	mov eax, 0xF0F0F0F0
+	movd mm0, eax
+	punpcklbw mm0, mm0
+
+	mov al, 0xF0
+	movd mm0, eax
+	pxor mm1, mm1
+	pshufb mm0, mm1
+
+
+vector idioms:
+set a vector register to all 0's
+	pxor xmm0, xmm0
+set a vector register to all 1's
+	pcmpeq[bwd] xmm0, xmm0
+extend low {byte,word,dword,qword}-wise pattern to high
+	punpckl{bw,wd,dq,qdq} xmm0, xmm0
+set each {byte,word,dword} to 1
+	pxor xmm0, xmm0
+	pcmpeq xmm1, xmm1
+	psub xmm0, xmm1
+set each word to 2^n - 1 (similar version for dwords too)
+	pcmpeq xmm0, xmm0
+	psrlw xmm0, 16-n
+set each word to -2^n
+	pcmpeq xmm0, xmm0
+	psllw xmm0, n
+look in Intel Opt. Man. pg 280 ("building blocks") for more
+also, see Agner Vol 2, section 13.4
+
+repeatedly doing pshufb on itself to a register effectively amounts to
+permuting it, based on itself. This could be interesting if there are
+multiple permutation cycles (with different periods) inside the vector
+register
+in general, pshufb can compose permutations
+
+to broadcast the lowest byte of xmm0, do
+	punpcklbw xmm0, xmm0
+	punpcklbw xmm0, xmm0 ; punpcklwd would work too, but prob be slower
+	punpcklbw xmm0, xmm0
+	punpcklbw xmm0, xmm0
+or if a scratch register is available:
+	pxor xmm1, xmm1
+	pshufb xmm0, xmm1
+to propagate the lowest word, do
+	punpcklwd xmm0, xmm0
+	punpcklwd xmm0, xmm0
+	punpcklwd xmm0, xmm0
+
+
+
+
+not really simd, but worth stashing somewhere
+use cqo to sign extend rax to rax:rdx useful to create a mask of the sign
+bit of rax

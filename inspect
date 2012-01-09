@@ -1,0 +1,1 @@
+sudo gdb attach $(ps | grep a.out | cut -d' ' -f1)

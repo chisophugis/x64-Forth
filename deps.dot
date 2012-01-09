@@ -1,0 +1,54 @@
+//bin/true; exec zsh -c 'meh =(dot -Tsvg deps.dot)'
+
+digraph deps {
+  create [style=filled fillcolor=red];
+  compile [style=filled fillcolor=green];
+  postpone [style=filled fillcolor=cyan];
+  execute [style=filled fillcolor=yellow];
+  variable [style=filled fillcolor=magenta];
+  question [style=filled fillcolor=blue label="???"]
+  // is it worth using BLUE to mark defining words (words that textually
+  // consume other words ahead of them)? Or is yellow distinguising enough?
+  // BLUE executed at edit time? how about BLACK executed at edit time?
+  // that seems to fit a lot better with the fact that they are usually
+  // invisible in the editor.
+  // and what about GRAY?
+  // and WHITE?
+  // RULE for colors: a color can only be used to implement a functionality
+  // that would otherwise not be possible.
+
+
+  find [label="find/mfind"];
+
+  editor -> variable;
+  //rankdir=BT; rankdir=LR;
+  //variable -> subgraph cluster_foo {a b} -> stack_setup;
+
+  stack_setup -> syscalls;
+  syscalls -> rwx_pages;
+  rwx_pages -> here;
+  here -> comma;
+  syscalls -> key -> word;
+  syscalls -> persistence;
+  persistence -> editor;
+  syscalls -> emit;
+
+  here -> compile;
+  here -> postpone;
+
+  write_number -> editor;
+  word -> find;
+
+  word -> create;
+  word -> read_number;
+  snorm -> create;
+  dictionary -> find;
+  dictionary -> create;
+  find -> compile;
+  find -> execute;
+  find -> postpone;
+  read_number -> write_number;
+  emit -> write_number;
+  stack_setup -> stack_macros;
+  read_number -> comma;
+}

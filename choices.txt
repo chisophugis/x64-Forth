@@ -1,0 +1,14 @@
+Record different design choices I have observed
+
+
+
+the problem with having explicit colors for whether a word is executed now
+or later (e.g. the "one dictionary" approach) is that you still run into
+the problem of needing "cyan" words. For example, if @ is a macro that is
+executed while compiling, what if you want to @ interactively? I think the
+basic principle of the color is to have the green mean "what gets compiled
+into the dictionary by this green word is what the name of the word
+represents". In that regard, the cyan words are correct to stand out, since
+they do not represent what the name of the word suggests getting compiled
+into the dictionary, they represent a call to that word, which behaves
+differently (compiles into the dictionary).

@@ -1,0 +1,3034 @@
+;colorForth, 2001 Jul 22, Chuck Moore, Public Domain
+;modified 8/06/01 for 800x600 operation Terry Loveall, loveall@qwest.net
+;modified ras20040728 returned to 1024x768 operation for the pentium 4 
+;by Ray.StMarie@gmail.com
+				.MODEL tiny
+				.486p
+ 00000000			only SEGMENT USE32
+				ASSUME DS:only
+
+				next MACRO adr
+				    dec  ECX
+				    jnz  adr
+				ENDM
+
+				DUP_ MACRO
+				    lea  ESI, [ESI-4]
+				    mov  [ESI], EAX
+				ENDM
+
+				DROP MACRO
+				    lodsd
+				ENDM
+
+				;;hp equ 800
+				;;vp equ 600
+				;;vesa equ 114h
+ = 00000400			hp equ 1024
+ = 00000300			vp equ 768
+ = 00004117		
+            vesa equ 4117h ; 117h but with LinearFrameBuffer Bit on
+ = 00025C00			buffer equ 604*256
+				include boot.asm ; boot boot0 hard
+			      C ; Floppy boot segment
+			      C 
+			      C org 0 ; actually 7c00
+ 00000000  EB 56	      C start: jmp  start0
+ 00000002  90		      C     nop
+			      C 
+ 00000003  63 6D 63 66 20     C     db 'cmcf 1.0'
+	   31 2E 30
+ 0000000B  0200		      C     dw 512     ; bytes/sector
+ 0000000D  01		      C     db 1       ; sector/cluster
+ 0000000E  0001		      C     dw 1       ; sector reserved
+ 00000010  02		      C     db 2       ; FATs
+ 00000011  00E0		      C     dw 16*14   ; root directory entries
+ 00000013  0B40		      C     dw 80*2*18 ; sectors
+ 00000015  F0		      C     db 0F0h    ; media
+ 00000016  0009		      C     dw 9       ; sectors/FAT
+ 00000018  0012		      C     dw 18      ; sectors/track
+ 0000001A  0002		      C     dw 2       ; heads
+ 0000001C  00000000	      C     dd 0       ; hidden sectors
+ 00000020  00000B40	      C     dd 80*2*18 ; sectors again
+ 00000024  00		      C     db 0       ; drive
+			      C ;    db 0
+			      C ;    db 29h     ; signature
+			      C ;    dd 44444444h     ; serial
+			      C ;    db 'COLOR FORTH' ; label
+			      C ;    db '        '
+			      C 
+ 00000025 00		      C command  db 0
+ 00000026  00		      C          db 0   ; head, drive
+ 00000027 00		      C cylinder db 0
+ 00000028  00		      C          db 0   ; head
+ 00000029  01		      C          db 1   ; sector
+ 0000002A  02		      C          db 2   ; 512 bytes/sector
+ 0000002B  12		      C          db 18  ; sectors/track
+ 0000002C  1B		      C          db 1bh ; gap
+ 0000002D  FF		      C          db 0ffh
+			      C ALIGN 4
+ 00000030 00000009	      C nc dd 9 ; Forth+Icons+blocks 24-161
+ 00000034 0017		      C gdt dw 17h
+ 00000036  00000040 R	      C     dd offset gdt0
+			      C ALIGN 8
+ 00000040 0000 0000 0000      C gdt0 dw 0, 0, 0, 0
+	   0000
+ 00000048  FFFF 0000 9A00     C     dw 0FFFFh, 0, 9A00h, 0CFh ; code
+	   00CF
+ 00000050  FFFF 0000 9200     C     dw 0FFFFh, 0, 9200h, 0CFh ; data
+	   00CF
+			      C 
+			    C ; Code is compiled in Protected 32-bit mode.
+			      C ; Hence  org $-2  to fix 16-bit words
+			      C ; and 4 hand-assembled instructions.
+			      C ; and EAX and AX exchanged
+			      C ; This code is in Real 16-bit mode
+			      C 
+ 00000058  B8 00004F02	      C start0: mov  EAX, 4F02h ; Video mode
+			      C org $-2
+ 0000005B  BB 00004117	      C     mov  EBX, vesa ; hp*vp rgb: 565
+			      C org $-2
+ 0000005E  CD 10	      C     int  10h
+ 00000060  FA		      C     cli
+ 00000061  66| 33 C0	      C     xor  AX, AX    ; Move code to 0
+ 00000064  66| 8B D8	      C     mov  BX, AX
+ 00000067  8C CB	      C     mov  EBX, CS
+ 00000069  8E DB	      C     mov  DS, EBX
+ 0000006B  8E C0	      C     mov  ES, EAX
+ 0000006D  66| 8B F8	      C     mov  DI, AX
+ 00000070  66| 8B F0	      C     mov  SI, AX
+ 00000073  E8 00000000	      C     call $+5 ; Where are we? IP+4*CS
+			      C org $-2
+ 00000076  5E		      C loc: pop  ESI
+ 00000077  81 EE 00000076     C     sub  ESI, offset loc-offset start
+			      C org $-2
+ 0000007B  B9 00000080	      C     mov  ECX, 512/4
+			      C org $-2
+ 0000007E  F3/ 66| A5	      C     rep movsw
+			      C ;    jmp  0:relocate
+ 00000081  EA		      C     db 0eah
+ 00000082  0086 0000	      C     dw offset relocate-offset start, 0
+			      C 
+ 00000086		      C relocate: ; This code is executed from 0
+ 00000086  8E D8	      C     mov  DS, EAX
+			      C ;   lgdt fword ptr gdt
+ 00000088  0F 01 16	      C     db 0fh, 1, 16h
+ 0000008B  0034		      C     dw offset gdt-offset start
+ 0000008D  B0 01	      C     mov  AL, 1
+ 0000008F  0F 22 C0	      C     mov  CR0, EAX
+			      C ;    jmp  8:protected
+ 00000092  EA		      C     db 0eah
+ 00000093  0097 0008	      C     dw offset protected-offset start, 8
+			      C 
+ 00000097		      C protected: 
+                           ; Now in Protected 32-bit mode
+ 00000097  B0 10	      C     mov  AL, 10h
+ 00000099  8E D8	      C     mov  DS, EAX
+ 0000009B  8E C0	      C     mov  ES, EAX
+ 0000009D  8E D0	      C     mov  SS, EAX
+ 0000009F  BC 000A0000	      C     mov  ESP, Gods
+ 000000A4  33 C9	      C     xor  ECX, ECX
+			      C 
+ 000000A6  B0 D1	      C A20: mov  AL, 0d1h
+ 000000A8  E6 64	      C     out  64h, AL
+ 000000AA  E4 64	      C @@:     in   AL, 64h
+ 000000AC  24 02	      C         and  AL, 2
+ 000000AE  75 FA	      C         jnz  @b
+ 000000B0  B0 4B	      C     mov  AL, 4bh
+ 000000B2  E6 60	      C     out  60h, AL
+			      C 
+ 000000B4  E8 000000D5	      C     call dma
+ 000000B9  C1 E3 04	      C     shl  EBX, 4
+ 000000BC  03 F3	      C     add  ESI, EBX
+ 000000BE  81 3E 44444444     C cmp  dword ptr [ESI], 44444444h ; Boot?
+ 000000C4  75 0D	      C     jnz  cold
+ 000000C6  66| B9 3E80	      C         mov  CX, 63*100h-80h ; Nope
+ 000000CA  F3/ A5	      C         rep movsd
+ 000000CC  BE 0009F448	      C         mov  ESI, Godd
+ 000000D1  EB 23	      C         jmp  start2
+			      C 
+ 000000D3  E8 00000083	      C cold:   call sense_
+ 000000D8  79 F9	      C         jns  cold
+ 000000DA  BE 0009F448	      C     mov  ESI, Godd
+ 000000DF  33 FF	      
+          C     xor  EDI, EDI ; Cylinder 0 on top of Address 0
+ 000000E1  8A 0D 00000030 R   C     mov  CL, byte ptr nc
+ 000000E7  51		      C @@:     push ECX
+ 000000E8  E8 000000CC	      C         call READ
+ 000000ED  FE 05 00000027 R   C         inc  cylinder
+ 000000F3  59		      C         pop  ECX
+ 000000F4  E2 F1	      C         loop @b
+ 000000F6  E8 00000081	      C start2: call stop
+ 000000FB  E9 0000018A	      C     jmp  start1
+			      C 
+ = 000000A6		      C us equ 1000/6
+ = 00028870		      C ms equ 1000*us
+ 00000100  B1 1C	      C SPIN: mov  CL, 1ch
+ 00000102  E8 00000077	      C     call onoff
+			      C ;    mov  DX, 3f2h
+			      C ;    out  DX, AL
+ 00000107  E8 0000004F	      C @@:     call sense_
+ 0000010C  79 F9	      C         jns  @b
+ 0000010E  C6 05 00000027 R   C     mov  cylinder, 0 ; calibrate
+	   00
+ 00000115  B0 07	      C     mov  AL, 7
+ 00000117  B1 02	      C     mov  CL, 2
+ 00000119  E8 00000020	      C     call cmd
+ 0000011E  B9 04F27AC0	      C     mov  ECX, 500*ms
+ 00000123  E2 FE	      C @@:     loop @b
+ 00000125  E8 00000031	      C cmdi:   call sense_
+ 0000012A  78 F9	      C         js   cmdi
+ 0000012C  C3		      C     ret
+			      C 
+ 0000012D		      C ready: ;call delay
+ 0000012D  66| BA 03F4	      C     mov  DX, 3f4h
+ 00000131  EC		      C @@:     in   AL, DX
+ 00000132  E6 E1	      C         out  0e1h, AL
+ 00000134  D0 E0	      C         shl  AL, 1
+ 00000136  73 F9	      C         jnc  @b
+ 00000138  8D 52 01	      C     lea  EDX, [EDX+1]
+ 0000013B  C3		      C     ret
+			      C 
+ 0000013C  B1 09	      C transfer: mov  CL, 9
+ 0000013E  8D 15 00000025 R   C cmd: lea  EDX, command
+ 00000144  88 02	      C     mov  [EDX], AL
+ 00000146  56		      C cmd0: push ESI
+ 00000147  8B F2	      C     mov  ESI, EDX
+ 00000149  E8 FFFFFFDF	      C cmd1:   call ready
+ 0000014E  79 03	      C         jns  @f
+ 00000150  EC		      C             in   AL, DX
+ 00000151  EB F6	      C             jmp  cmd1
+ 00000153  AC		      C @@:     lodsb
+ 00000154  EE		      C         out  DX, AL
+ 00000155  E6 E1	      C         out  0e1h, AL
+ 00000157  E2 F0	      C         loop cmd1
+ 00000159  5E		      C     pop  ESI
+			      C ;delay: mov  EAX, us
+			      C ;@@:     dec  EAX
+			      C ;        jnz  @b
+ 0000015A  C3		      C     ret
+			      C 
+ 0000015B  B0 08	      C sense_: mov  AL, 8
+ 0000015D  B9 00000001	      C     mov  ECX, 1
+ 00000162  E8 FFFFFFD7	      C     call cmd
+ 00000167  E8 FFFFFFC1	      C @@:     call ready
+ 0000016C  79 F9	      C         jns  @b
+ 0000016E  EC		      C     in   AL, DX
+ 0000016F  E6 E1	      C     out  0e1h, AL
+ 00000171  22 C0	      C     and  AL, AL
+			      C ;    cmp  AL, 80h
+ 00000173  C3		      C     ret
+			      C 
+ 00000174  E8 FFFFFFE2	      C seek:   call sense_
+ 00000179  79 F9	      C         jns  seek
+ 0000017B  C3		      C     ret
+			      C 
+ 0000017C  B1 0C	      C stop: mov  CL, 0ch ; Motor off
+ 0000017E		      C onoff: DUP_
+ 0000017E  8D 76 FC	     1C     lea  ESI, [ESI-4]
+ 00000181  89 06	     1C     mov  [ESI], EAX
+ 00000183  8A C1	      C     mov  AL, CL
+ 00000185  66| BA 03F2	      C     mov  DX, 3f2h
+ 00000189  EE		      C     out  DX, AL
+ 0000018A  E6 E1	      C     out  0e1h, AL
+			      C     DROP
+ 0000018C  AD		     1C     lodsd
+ 0000018D  C3		      C     ret
+			      C 
+ 0000018E  66| C7 05	      
+          C dma: mov  word ptr command+1, 3a2h ; l2 s6 u32 ms (e 2)
+	   00000026 R
+	   03A2
+ 00000197  B0 03	      C     mov  AL, 3 ; timing
+ 00000199  B1 03	      C     mov  CL, 3
+ 0000019B  E8 FFFFFF9E	      C     call cmd
+ 000001A0  66| C7 05	
+          C     mov  word ptr command+1, 7000h ; +seek -fifo -poll
+	  
+         00000026 R
+	   7000
+ 000001A9  B0 13	      C     mov  AL, 13h ; configure
+ 000001AB  B1 04	      C     mov  CL, 4
+ 000001AD  E8 FFFFFF8C	      C     call cmd
+ 000001B2  89 0D 00000025 R   C     mov  dword ptr command, ECX ; 0
+ 000001B8  C3		      C     ret
+			      C 
+ 000001B9  E8 FFFFFFB6	      C READ: call SEEK
+ 000001BE  B0 E6	      C     mov  AL, 0e6h ; Read normal data
+ 000001C0  E8 FFFFFF77	      C     call TRANSFER
+ 000001C5  66| B9 4800	      C     mov  CX, 18*2*512
+ 000001C9  E8 FFFFFF5F	      C @@:     call ready
+ 000001CE  EC		      C         in   AL, DX
+ 000001CF  E6 E1	      C         out  0e1h, AL
+ 000001D1  AA		      C         stosb
+			      C         next @b
+ 000001D2  49		     1C     dec  ECX
+ 000001D3  75 F4	     1C     jnz  @b
+ 000001D5  C3		      C     ret
+			      C 
+ 000001D6  E8 FFFFFF99	      C WRITE: call SEEK
+ 000001DB  B0 C5	      C     mov  AL, 0c5h ; Write data
+ 000001DD  E8 FFFFFF5A	      C     call TRANSFER
+ 000001E2  66| B9 4800	      C     mov  CX, 18*2*512
+ 000001E6  E8 FFFFFF42	      C @@:     call ready
+ 000001EB  AC		      C         lodsb
+ 000001EC  EE		      C         out  DX, AL
+ 000001ED  E6 E1	      C         out  0e1h, AL
+			      C         next @b
+ 000001EF  49		     1C     dec  ECX
+ 000001F0  75 F4	     1C     jnz  @b
+ 000001F2  C3		      C     ret
+			      C 
+			      C org 1feh ; Mark boot sector
+ 000001FE  AA55		      C     dw 0aa55h
+ 00000200  44444444	      C     dd 44444444h ; Mark COLOR.COM
+			      C 
+ 00000204  A2 00000027 R      C flop: mov  cylinder, AL ; c-cx
+			      C     DUP_
+ 00000209  8D 76 FC	     1C     lea  ESI, [ESI-4]
+ 0000020C  89 06	     1C     mov  [ESI], EAX
+ 0000020E  66| BA 03F2	      C     mov  DX, 3f2h
+ 00000212  EC		      C     in   AL, DX
+ 00000213  E6 E1	      C     out  0e1h, AL
+ 00000215  A8 10	      C     test AL, 10h
+ 00000217  75 05	      C     jnz  @f
+ 00000219  E9 FFFFFEE2	      C         jmp  spin
+ 0000021E  C3		      C @@: ret
+			      C 
+ 0000021F  E8 FFFFFFE0	      C readf: call flop ; ac-ac
+ 00000224  57		      C     push EDI
+ 00000225  8B 7E 04	      C     mov  EDI, [ESI+4]
+ 00000228  C1 E7 02	      C     shl  EDI, 2
+ 0000022B  E8 FFFFFF89	      C     call READ
+ 00000230  5F		      C     pop  EDI
+ 00000231		      C readf1: DROP
+ 00000231  AD		     1C     lodsd
+ 00000232  40		      C     inc  EAX
+ 00000233  81 06 00001200     C     add  dword ptr [ESI], 1200h
+ 00000239  C3		      C     ret
+			      C 
+ 0000023A  E8 FFFFFFC5	      C writef: call flop ; ac-ac
+ 0000023F  56		      C     push ESI
+ 00000240  8B 76 04	      C     mov  ESI, [ESI+4]
+ 00000243  C1 E6 02	      C     shl  ESI, 2
+ 00000246  E8 FFFFFF8B	      C     call WRITE
+ 0000024B  5E		      C     pop  ESI
+ 0000024C  EB E3	      C     jmp  readf1
+			      C 
+ 0000024E  E8 FFFFFFB1	      C seekf: call flop ; c-c
+			      C ;    call delay
+ 00000253  E8 FFFFFF1C	      C     call seek
+ 00000258  B0 0F	      C     mov  AL, 0fh
+ 0000025A  B1 03	      C     mov  CL, 3
+ 0000025C  E8 FFFFFEDD	      C     call cmd
+ 00000261  E8 FFFFFEBF	      C     call cmdi
+			      C     DROP
+ 00000266  AD		     1C     lodsd
+ 00000267  C3		      C     ret
+			      C 
+ 00000268  8B C8	      C cmdf: mov  ECX, EAX ; an
+			      C     DROP
+ 0000026A  AD		     1C     lodsd
+ 0000026B  8D 14 85	      C     lea  EDX, [EAX*4]
+	   00000000
+ 00000272  E8 FFFFFECF	      C     call cmd0
+			      C     DROP
+ 00000277  AD		     1C     lodsd
+ 00000278  C3		      C     ret
+			      C 
+ 00000279		      C readyf: DUP_
+ 00000279  8D 76 FC	     1C     lea  ESI, [ESI-4]
+ 0000027C  89 06	     1C     mov  [ESI], EAX
+ 0000027E  E8 FFFFFEAA	      C     call ready
+			      C     DROP
+ 00000283  AD		     1C     lodsd
+ 00000284  C3		      C     ret
+			      C 
+
+				;   100000 dictionary
+				;    a0000 top of return stack
+				;    9f800 top of data stack
+				;    9d800 free
+				;    97000 floppy buffer
+				;     4800 source
+ = 00003000			icons equ 12*256*4 ; 3000
+				;     7c00 BIOS boot sector
+				;        0 Forth
+
+ 00000285			warm: DUP_
+ 00000285  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00000288  89 06	     1	    mov  [ESI], EAX
+ 0000028A  E8 00001C86		start1: call ATI0
+				;    mov  screen, offset nul
+				;    xor  EAX, EAX
+ 0000028F  E8 00000077		    call show0
+ 00000294  C7 05 000007C4 R	    mov  forths, (forth1-forth0)/4
+	   0000003B
+ 0000029E  C7 05 000007C0 R	    mov  macros, (macro1-macro0)/4
+	   00000006
+ 000002A8  B8 00000012		    mov  EAX, 18
+ 000002AD  E8 0000048F		    call LOAD
+ 000002B2  E9 000021E8		    jmp  ACCEPT
+
+ = 000A0000			Gods equ 28000h*4 ; 0A0000h
+ = 0009F448			Godd equ Gods-750*4
+ = 0009DCD8			mains equ Godd-1500*4
+ = 0009D120			maind equ mains-750*4
+				ALIGN 4
+ 000002B8 000002C5 R		    me dd offset God
+ 000002BC 00000000		screen dd 0 ; logo
+
+ 000002C0  E8 00000021		ROUND: call unPAUSE
+ 000002C5 00000000		God     dd 0 ; Gods-2*4
+ 000002C9  E8 00000018		    call unPAUSE
+ 000002CE 00000000		main    dd 0 ; mains-2*4
+ 000002D2  EB EC		    jmp  ROUND
+
+ 000002D4			PAUSE: DUP_
+ 000002D4  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000002D7  89 06	     1	    mov  [ESI], EAX
+ 000002D9  56			    push ESI
+ 000002DA  A1 000002B8 R	    mov  EAX, me
+ 000002DF  89 20		    mov  [EAX], ESP
+ 000002E1  83 C0 04		    add  EAX, 4
+ 000002E4  FF E0		    jmp  EAX
+
+ 000002E6  58			unPAUSE: pop  EAX
+ 000002E7  8B 20		    mov  ESP, [EAX]
+ 000002E9  A3 000002B8 R	    mov  me, EAX
+ 000002EE  5E			    pop  ESI
+				    DROP
+ 000002EF  AD		     1	    lodsd
+ 000002F0  C3			    ret
+
+ 000002F1  BA 0009D11C		ACT: mov  EDX, maind-4
+ 000002F6  89 02		    mov  [EDX], EAX
+ 000002F8  B8 0009DCD4		    mov  EAX, mains-4
+ 000002FD  8F 00		    pop  [EAX]
+ 000002FF  83 E8 04		    sub  EAX, 4
+ 00000302  89 10		    mov  [EAX], EDX
+ 00000304  A3 000002CE R	    mov  main, EAX
+				    DROP
+ 00000309  AD		     1	    lodsd
+ 0000030A  C3			    ret
+
+ 0000030B  E8 00000001		show0: call show
+ 00000310  C3			    ret
+ 00000311  8F 05 000002BC R	show: pop  screen
+				    DUP_
+ 00000317  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 0000031A  89 06	     1	    mov  [ESI], EAX
+ 0000031C  33 C0		    xor  EAX, EAX
+ 0000031E  E8 FFFFFFCE		    call ACT
+ 00000323  E8 00001C24		@@:     call graphic
+ 00000328  FF 15 000002BC R	        call [screen]
+ 0000032E  E8 00001C1A		        call SWITCH
+ 00000333  40			        inc  EAX
+ 00000334  EB ED		        jmp  @b
+
+ 00000336  BE 0009F44C		c_:  mov  ESI, Godd+4
+ 0000033B  C3			    ret
+
+ 0000033C  8B 0D 000007C0 R	mark: mov  ECX, macros
+ 00000342  89 0D 000007A0 R	    mov  mk, ECX
+ 00000348  8B 0D 000007C4 R	    mov  ECX, forths
+ 0000034E  89 0D 000007A4 R	    mov  mk+4, ECX
+ 00000354  8B 0D 000007AC R	    mov  ECX, H
+ 0000035A  89 0D 000007A8 R	    mov  mk+2*4, ECX
+ 00000360  C3			    ret
+
+ 00000361  8B 0D 000007A8 R	empty: mov  ECX, mk+2*4
+ 00000367  89 0D 000007AC R	    mov  H, ECX
+ 0000036D  8B 0D 000007A4 R	    mov  ECX, mk+4
+ 00000373  89 0D 000007C4 R	    mov  forths, ECX
+ 00000379  8B 0D 000007A0 R	    mov  ECX, mk
+ 0000037F  89 0D 000007C0 R	    mov  macros, ECX
+ 00000385  C7 05 000007B4 R	    mov  class, 0
+	   00000000
+ 0000038F  C3			    ret
+
+; mFIND: macro find (find in macro dictionary)
+; if the word is found in the dictionary, then ECX is left with the index
+; of the word and the Z flag is set because the REPNE SCASD ended with a
+; 'NE' instead of by running out the counter. If the counter is run out,
+; then the Z flag will not be set, indicating that the word was not found.
+; This return condition is tested for in EX1, for example.
+ 00000390  8B 0D 000007C0 R	mFIND: mov  ECX, macros ; set count (ECX) to number of macros in the macro dictionary
+ 00000396  57			    push EDI
+ 00000397  8D 3C 8D		    lea  EDI, [macro0-4+ECX*4] ; load EDI (string op destination) with the address of the top of the macro name stack
+	   000007C4 R
+ 0000039E  EB 0E		    jmp  @f
+
+; FIND: find in forth dictionary
+ 000003A0  8B 0D 000007C4 R	FIND: mov  ECX, forths
+ 000003A6  57			    push EDI
+ 000003A7  8D 3C 8D		    lea  EDI, [forth0-4+ECX*4]
+	   000009DC R
+
+; this code is shared by FIND and mFIND
+ 000003AE  FD			@@: std ; reading DOWN from the top of the dictionary
+ 000003AF  F2/ AF		    repne scasd
+ 000003B1  FC			    cld
+ 000003B2  5F			    pop  EDI ; restore old EDI; if the word was found, then ECX has the index
+ 000003B3  C3			    ret
+
+ 000003B4  FF 0D 00002498 R	EX1: dec  words ; from keyboard
+ 000003BA  74 03		    jz   @f
+				        DROP
+ 000003BC  AD		     1	    lodsd
+ 000003BD  EB F5		        jmp  EX1
+ 000003BF  E8 FFFFFFDC		@@: call FIND
+ 000003C4  75 3F		    jnz  ABORT1
+				        DROP
+ 000003C6  AD		     1	    lodsd
+ 000003C7  FF 24 8D		        jmp  [forth2+ECX*4]
+	   000014E4 R
+
+ 000003CE  C7 05 0000079C R	execute: mov  lit, offset alit
+	   00000588 R
+				    DUP_
+ 000003D8  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000003DB  89 06	     1	    mov  [ESI], EAX
+ 000003DD  8B 04 BD		    mov  EAX, [-4+EDI*4]
+	   FFFFFFFC
+ 000003E4  83 E0 F0		ex2: and  EAX, -20o
+ 000003E7  E8 FFFFFFB4		    call FIND
+ 000003EC  75 08		    jnz  ABORT
+				        DROP
+ 000003EE  AD		     1	    lodsd
+ 000003EF  FF 24 8D		        jmp  [forth2+ECX*4]
+	   000014E4 R
+
+ 000003F6  89 3D 00002AA4 R	ABORT: mov  curs, EDI
+ 000003FC  C1 EF 08		    shr  EDI, 10-2
+ 000003FF  89 3D 00002AA0 R	    mov  blk, EDI
+ 00000405  BC 000A0000		ABORT1: mov  ESP, Gods
+ 0000040A  C7 05 00000768 R	    mov  spaces+3*4, offset forthd
+	   00000467 R
+ 00000414  C7 05 0000076C R	    mov  spaces+4*4, offset qcompile
+	   000005BD R
+ 0000041E  C7 05 00000770 R	    mov  spaces+5*4, offset cnum
+	   00000561 R
+ 00000428  C7 05 00000774 R	    mov  spaces+6*4, offset cshort
+	   00000571 R
+ 00000432  B8 0000002F		    mov  EAX, 57o ; ?
+ 00000437  E8 00001D11		    call ECHO_
+ 0000043C  E9 0000205E		    jmp  ACCEPT
+
+ 00000441  8F 05 00000768 R	sDEFINE: pop  aDEFINE
+ 00000447  C3			    ret
+ 00000448  E8 FFFFFFF4		MACRO_: call sDEFINE
+ 0000044D  8B 0D 000007C0 R	macrod: mov  ECX, macros
+ 00000453  FF 05 000007C0 R	    inc  macros
+ 00000459  8D 0C 8D		    lea  ECX, [macro0+ECX*4]
+	   000007C8 R
+ 00000460  EB 18		    jmp  @f
+
+ 00000462  E8 FFFFFFDA		FORTH: call sDEFINE
+ 00000467  8B 0D 000007C4 R	forthd: mov  ECX, forths
+ 0000046D  FF 05 000007C4 R	    inc  forths
+ 00000473  8D 0C 8D		    lea  ECX, [forth0+ECX*4]
+	   000009E0 R
+ 0000047A  8B 14 BD		@@: mov  EDX, [-4+EDI*4]
+	   FFFFFFFC
+ 00000481  83 E2 F0		    and  EDX, -20o
+ 00000484  89 11		    mov  [ECX], EDX
+ 00000486  8B 15 000007AC R	    mov  EDX, h
+ 0000048C  89 91 00000B04	    mov  [forth2-forth0+ECX], EDX
+ 00000492  8D 91 00000B04	    lea  EDX, [forth2-forth0+ECX]
+ 00000498  C1 EA 02		    shr  EDX, 2
+ 0000049B  89 15 000007B0 R	    mov  last, EDX
+ 000004A1  89 25 000007B8 R	    mov  list, ESP
+ 000004A7  C7 05 0000079C R	    mov  lit, offset adup
+	   0000050D R
+ 000004B1  F7 05 000007B4 R	    test class, -1
+	   FFFFFFFF
+ 000004BB  74 06		    jz   @f
+ 000004BD  FF 25 000007B4 R	        jmp  [class]
+ 000004C3  C3			@@: ret
+
+ 000004C4  8B 15 000007AC R	cdrop: mov  EDX, h
+ 000004CA  89 15 000007B8 R	    mov  list, EDX
+ 000004D0  C6 02 AD		    mov  byte ptr [EDX], 0adh ; lodsd
+ 000004D3  FF 05 000007AC R	    inc  h
+ 000004D9  C3			    ret
+
+; DOC
+; q prefix means ?foo and c prefix means compile foo
+
+; qdup: if the last inst. compiled was DROP (lodsd), move back over it
+(erase it) because what is about to be compiled (in the macro that uses
+?dup) will clobber EAX anyway, otherwise compile a DUP so that we don't
+clobber EAX. The usual use case for this is as a cyan word in a macro which
+destructively overwrites EAX.
+; the reason that there are all these ?foo words is because the assembler
+words can work non-/destructively with eax, while the forth words have to
+dup or drop  and then do stuff
+ 000004DA  8B 15 000007AC R	qdup: mov  EDX, h
+ 000004E0  4A			    dec  EDX
+ 000004E1  39 15 000007B8 R	    cmp  list, EDX			; last inst. 1-byte?
+ 000004E7  75 0C		    jnz  cdup
+ 000004E9  80 3A AD		    cmp  byte ptr [EDX], 0adh		; last inst. lodsd?
+ 000004EC  75 07		    jnz  cdup
+ 000004EE  89 15 000007AC R	        mov  h, EDX			; step back over it
+ 000004F4  C3			        ret
+ 000004F5  8B 15 000007AC R	cdup: mov  EDX, h
+ 000004FB  C7 02 89FC768D	    mov  dword ptr [EDX], 89fc768dh
+ 00000501  C6 42 04 06		    mov  byte ptr [4+EDX], 06
+ 00000505  83 05 000007AC R	    add  h, 5
+	   05
+ 0000050C  C3			    ret
+
+ 0000050D			adup: DUP_
+ 0000050D  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00000510  89 06	     1	    mov  [ESI], EAX
+ 00000512  C3			    ret
+
+ 00000513			var1: DUP_
+ 00000513  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00000516  89 06	     1	    mov  [ESI], EAX
+ 00000518  8B 04 8D		    mov  EAX, [4+forth0+ECX*4]
+	   000009E4 R
+ 0000051F  C3			    ret
+ 00000520  E8 FFFFFF42		variable: call forthd
+ 00000525  C7 81 00000B04	    mov  [forth2-forth0+ECX], offset var1
+	   00000513 R
+ 0000052F  FF 05 000007C4 R   inc  forths ; dummy entry for source address
+ 00000535  89 79 04		    mov  [4+ECX], EDI
+ 00000538  E8 FFFFFF10		    call macrod
+ 0000053D  C7 81 00000B04	    mov  [forth2-forth0+ECX], offset @f
+	   00000552 R
+ 00000547  FF 05 000007C0 R	    inc  macros
+ 0000054D  89 79 04		    mov  [4+ECX], EDI
+ 00000550  47			    inc  EDI
+ 00000551  C3			    ret
+ 00000552  FF 15 0000079C R	@@: call [lit]
+ 00000558  8B 04 8D		    mov  EAX, [4+macro0+ECX*4]
+	   000007CC R
+ 0000055F  EB 20		    jmp  @f
+
+ 00000561  FF 15 0000079C R	cNUM: call [lit]
+ 00000567  8B 04 BD		    mov  EAX, [EDI*4]
+	   00000000
+ 0000056E  47			    inc  EDI
+ 0000056F  EB 10		    jmp  @f
+
+ 00000571  FF 15 0000079C R	cSHORT: call [lit]
+ 00000577  8B 04 BD		    mov  EAX, [-4+EDI*4]
+	   FFFFFFFC
+ 0000057E  C1 F8 05		    sar  EAX, 5
+ 00000581  E8 0000000C		@@: call literal
+				    DROP
+ 00000586  AD		     1	    lodsd
+ 00000587  C3			    ret
+
+ 00000588  C7 05 0000079C R	alit: mov lit, offset adup
+	   0000050D R
+ 00000592  E8 FFFFFF43		literal: call qDUP
+ 00000597  8B 15 000007B8 R	    mov  EDX, list
+ 0000059D  89 15 000007BC R	    mov  list+4, EDX
+ 000005A3  8B 15 000007AC R	    mov  EDX, h
+ 000005A9  89 15 000007B8 R	    mov  list, EDX
+ 000005AF  C6 02 B8		    mov  byte ptr [EDX], 0b8h
+ 000005B2  89 42 01		    mov  [1+EDX], EAX
+ 000005B5  83 05 000007AC R	    add  h, 5
+	   05
+ 000005BC  C3			    ret
+
+; qCOMPILE: compile a word
+; I think that the real name of this is ?compile
+; the name I think is because it conditionally compiles depending on whether the word is a macro or a forth word
+; i.e., if it is a macro, jmp to the macro, if it is a forth word, compile a call to it
+ 000005BD  FF 15 0000079C R	qCOMPILE: call [lit]
+ 000005C3  8B 04 BD		    mov  EAX, [-4+EDI*4]
+	   FFFFFFFC
+ 000005CA  83 E0 F0		    and  EAX, -20o
+ 000005CD  E8 FFFFFDBE		    call mFIND
+ 000005D2  75 08		    jnz  @f
+				        DROP
+ 000005D4  AD		     1	    lodsd
+ 000005D5  FF 24 8D		        jmp  [macro2+ECX*4] ; execute the macro if found
+	   000012CC R
+ 000005DC  E8 FFFFFDBF		@@: call FIND
+ 000005E1  8B 04 8D		    mov  EAX, [forth2+ECX*4] ; compile a call (0xe8) if forth word
+	   000014E4 R
+ 000005E8  0F 85 FFFFFE08	@@: jnz  ABORT
+ 000005EE  8B 15 000007AC R	call_: mov  EDX, h
+ 000005F4  89 15 000007B8 R	    mov  list, EDX
+ 000005FA  C6 02 E8		    mov  byte ptr [EDX], 0e8h
+ 000005FD  83 C2 05		    add  EDX, 5 ; compute relative (rel32) offset
+ 00000600  2B C2		    sub  EAX, EDX
+ 00000602  89 42 FC		    mov  [-4+EDX], EAX
+ 00000605  89 15 000007AC R	    mov  h, EDX ; update "here"
+				    DROP
+ 0000060B  AD		     1	    lodsd
+ 0000060C  C3			    ret
+
+; compile a call, even if it is a macro
+; macro2 contains the offsets corresponding to macro dictionary entries
+ 0000060D  FF 15 0000079C R	COMPILE: call [lit]
+ 00000613  8B 04 BD		    mov  EAX, [-4+EDI*4]
+	   FFFFFFFC
+; -20o==0xF0 sign-extend to 0xFFF...F0, turn off bottom 4 bits, which are the "tag" indicating function
+ 0000061A  83 E0 F0		    and  EAX, -20o 
+ 0000061D  E8 FFFFFD6E		    call mFIND
+ 00000622  8B 04 8D		    mov  EAX, [macro2+ECX*4]
+	   000012CC R
+ 00000629  EB BD		    jmp  @b
+
+; this gets a number if it fits in one word. notice that it fetches out of
+; the previous word (that is, the word that is currently being interpreted)
+ 0000062B  C7 05 0000079C R	SHORT_: mov lit, offset alit
+	   00000588 R
+				    DUP_
+ 00000635  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00000638  89 06	     1	    mov  [ESI], EAX
+ 0000063A  8B 04 BD		    mov  EAX, [-4+EDI*4] ; fetch out of the previous word
+	   FFFFFFFC
+ 00000641  C1 F8 05		    sar  EAX, 5 ; shift out tag bits
+ 00000644  C3			    ret
+
+; this gets a number which is a full word. note that it gets the value out
+of the current (i.e. next to be interpreted) word, and skips over it
+ 00000645  C7 05 0000079C R	NUM: mov lit, offset alit
+	   00000588 R
+				    DUP_
+ 0000064F  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00000652  89 06	     1	    mov  [ESI], EAX
+ 00000654  8B 04 BD		    mov  EAX, [EDI*4]
+	   00000000
+ 0000065B  47			    inc  EDI
+ 0000065C  C3			    ret
+
+ 0000065D  B9 00000004		comma: mov  ECX, 4
+ 00000662  8B 15 000007AC R	@@: mov  EDX, h
+ 00000668  89 02		    mov  [EDX], EAX
+ 0000066A  8B 06		    mov  EAX, [ESI] ; drop
+ 0000066C  8D 14 11		    lea  EDX, [EDX+ECX]
+ 0000066F  8D 76 04		    lea  ESI, [ESI+4]
+ 00000672  89 15 000007AC R	    mov  h, EDX
+				;    DROP
+ 00000678  C3			    ret
+
+ 00000679  B9 00000001		comma1: mov  ECX, 1
+ 0000067E  EB E2		    jmp  @b
+
+ 00000680  B9 00000002		comma2: mov  ECX, 2
+ 00000685  EB DB		    jmp  @b
+
+ 00000687  B9 00000003		comma3: mov  ECX, 3
+ 0000068C  EB D4		    jmp  @b
+
+ 0000068E  8B 15 000007AC R	semi: mov  EDX, h
+ 00000694  83 EA 05		    sub  EDX, 5
+ 00000697  39 15 000007B8 R	    cmp  list, EDX
+ 0000069D  75 08		    jnz  @f
+ 0000069F  80 3A E8		    cmp  byte ptr [EDX], 0e8h
+ 000006A2  75 03		    jnz  @f
+ 000006A4  FE 02		        inc  byte ptr [EDX] ; jmp ;; CALL (E8) -> JMP near (E9)
+ 000006A6  C3			        ret
+ 000006A7  C6 42 05 C3		@@: mov  byte ptr [5+EDX], 0c3h ; ret
+ 000006AB  FF 05 000007AC R	    inc  h
+ 000006B1  C3			    ret
+
+ ; ESP is a "know not real" last instruction, which is important because
+ otherwise no ret be compiled if a semicolon follows, causing a jump into
+ no mans land
+ 000006B2  89 25 000007B8 R	then: mov  list, ESP
+ 000006B8  8B 15 000007AC R	    mov  EDX, h
+ 000006BE  2B D0		    sub  EDX, EAX
+ 000006C0  88 50 FF		    mov  [-1+EAX], DL
+				    DROP
+ 000006C3  AD		     1	    lodsd
+ 000006C4  C3			    ret
+
+ 000006C5  89 25 000007B8 R	begin: mov  list, ESP ; invalidate last instruction stored?
+ 000006CB			here: DUP_
+ 000006CB  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000006CE  89 06	     1	    mov  [ESI], EAX
+ 000006D0  A1 000007AC R	    mov  EAX, h
+ 000006D5  C3			    ret
+
+ 000006D6  8B 15 000007AC R	qlit: mov  EDX, h			; 'h' is the HERE for the code
+ 000006DC  8D 52 FB		    lea  EDX, [EDX-5]			; looking for a MOV rAX Iv
+ 000006DF  39 15 000007B8 R	    cmp  list, EDX			; 'list' is (address of) the last instruction stored
+ 000006E5  75 33		    jnz  @f				; looking for a 5-byte (b8 + imm32) MOV, bail with z flag set if last inst wasn't 5 bytes
+ 000006E7  80 3A B8		    cmp  byte ptr [EDX], 0b8h		; check for MV rAX Iv
+ 000006EA  75 2E		    jnz  @f				; bail with z flag set if last inst wasn't (b8 + imm32)
+				        DUP_				; save TOS
+ 000006EC  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000006EF  89 06	     1	    mov  [ESI], EAX
+ 000006F1  A1 000007BC R	        mov  EAX, list+4		; get lastlast inst ... (4 bytes after last instruction)
+ 000006F6  A3 000007B8 R	        mov  list, EAX			; ... and replace last inst with lastlast inst
+ 000006FB  8B 42 01		        mov  EAX, [1+EDX]		; get the literal out of the b8+imm32 and onto stack
+ 000006FE  81 7A FB	        cmp  dword ptr [EDX-5], 89fc768dh ; dup ;; check if inst. before b8+imm32 was a dup (don't check 06 after but close enough)
+	   89FC768D
+ 00000705  74 0B		        jz   q1				; if last inst. before was a dup, ... then reset codeHERE to be even farther back (we can just take from EAX nondestructively)
+ 00000707  89 15 000007AC R	            mov  h, EDX			; if last inst. before wasn't a dup, reset codeHERE to be on top of the MOV rAX Iv we just extracted the literal from (e.g. erase that inst.)
+; ... and compile a drop, so that the expected stack state from the literal is restored (e.g., get back on the stack the thing that the DUP before the literal displaced)
+ 0000070D  E9 FFFFFDB2		            jmp  cdrop
+ 00000712  83 05 000007AC R	q1:     add  h, -10 ; flag nz		; this moves codeHERE back past the dup too, it also sets the nz flag (along the other path, the inc in cdrop will too)
+	   F6
+ 00000719  C3			        ret
+ 0000071A  33 D2		@@: xor  EDX, EDX ; flag z
+ 0000071C  C3			    ret
+
+ 0000071D  39 06		less: cmp  [ESI], EAX
+ 0000071F  7C 02	jl   @f ; flag nz ; Bug-fix! original was "js"
+ 00000721  33 C9	        xor  ECX, ECX ; flag z
+ 00000723  C3			@@: ret
+
+ 00000724  F7 04 BD	qIGNORE: test dword ptr [-4+EDI*4], -20o
+	   FFFFFFFC
+	   FFFFFFF0
+ 0000072F  75 02		    jnz  nul
+ 00000731  5F			        pop  EDI
+ 00000732  5F			        pop  EDI
+ 00000733  C3			nul: ret
+
+; wow holy shit this is wicked powerful
+; first it gets the PC of where it was called
+; then it computes PC + 5*(EAX+1), which is the "PC" of the call in
+; the EAX'th position of the jump table (i.e., the byte after the
+; instruction). it then adds to that the rel32 from the CALL that is
+; sitting there, and jumps to that location
+ 00000734  5A			jump: pop  EDX
+ 00000735  03 D0		    add  EDX, EAX
+ 00000737  8D 54 82 05		    lea  EDX, [5+EAX*4+EDX]
+ 0000073B  03 52 FC		    add  EDX, [-4+EDX]
+				    DROP
+ 0000073E  AD		     1	    lodsd
+ 0000073F  FF E2		    jmp  EDX
+
+ 00000741  C1 E0 08		LOAD: shl  EAX, 10-2
+ 00000744  57			    push EDI
+ 00000745  8B F8		    mov  EDI, EAX
+				    DROP
+ 00000747  AD		     1	    lodsd
+ 00000748  8B 14 BD		INTER:  mov  EDX, [EDI*4]
+	   00000000
+ 0000074F  47			        inc  EDI
+ 00000750  83 E2 0F		        and  EDX, 17o
+ 00000753  FF 14 95		        call spaces[EDX*4]
+	   0000075C R
+ 0000075A  EB EC		        jmp  INTER
+
+				ALIGN 4
+ 0000075C 00000724 R	
+     spaces dd offset qIGNORE, offset execute, offset NUM
+	   000003CE R
+	   00000645 R
+ 00000768 0000044D R	aDEFINE dd 5+offset MACRO_ ; offset macrod ?
+ 0000076C  000005BD R
+     dd offset qCOMPILE, offset cNUM, offset cSHORT, offset COMPILE
+	   00000561 R
+	   00000571 R
+	   0000060D R
+ 0000077C  0000062B R 
+    dd offset SHORT_, offset nul, offset nul, offset nul
+	   00000733 R
+	   00000733 R
+	   00000733 R
+ 0000078C  00000520 R 
+    dd offset variable, offset nul, offset nul, offset nul
+	   00000733 R
+	   00000733 R
+	   00000733 R
+
+ 0000079C 0000050D R		   lit dd offset adup
+ 000007A0 00000000		    mk dd 0, 0, 0
+	   00000000
+	   00000000
+ 000007AC 00100000		     H dd 40000h*4
+ 000007B0 00000000		  last dd 0
+ 000007B4 00000000		 class dd 0
+ 000007B8 00000000		  list dd 0, 0
+	   00000000
+ 000007C0 00000000		macros dd 0
+ 000007C4 00000000		forths dd 0
+			;macro0 dd (3 shl 4+1)shl 24 ; or
+			;       dd ((5 shl 4+6)shl 7+140o)shl 17 ; and
+			;       dd 173o shl 25 ; +
+ 000007C8 F0000000	macro0 dd 170o shl 25 ; ;
+ 000007CC  C19B1000	dd ((140o shl 7+146o)shl 7+142o)shl 11 ; dup
+ 000007D0  FF833620	
+    dd (((177o shl 7+140o)shl 7+146o)shl 7+142o)shl 4 ; ?dup
+ 000007D4  C0278800	
+    dd (((140o shl 4+1)shl 4+3)shl 7+142o)shl 10 ; drop
+		;       dd ((6 shl 4+7)shl 7+142o)shl 17 ; nip
+ 000007D8  2C88C000	
+    dd (((2 shl 7+144o)shl 4+4)shl 4+6)shl 13 ; then
+ 000007DC  C6957600	
+    dd ((((143o shl 4+4)shl 5+25o)shl 4+7)shl 4+6)shl 8 ; begin
+ 000007E0  00000080 [	macro1 dd 128 dup (0)
+	    00000000
+	   ]
+ 000009E0 C6664000	
+    forth0 dd (((143o shl 4+3)shl 4+3)shl 4+2)shl 13 ; boot
+ 000009E4  BA8C4000     
+    dd (((27o shl 4+5)shl 4+1)shl 5+21o)shl 14 ; warm
+ 000009E8  C4B9A080     
+    dd ((((142o shl 4+5)shl 7+146o)shl 5+20o)shl 4+4)shl 5 ; pause
+ 000009EC  8AC84C00     
+    dd ((((21o shl 4+5)shl 5+22o)shl 4+1)shl 4+3)shl 10 ; MACRO
+ 000009F0  B1896400     
+    dd ((((26o shl 4+3)shl 4+1)shl 4+2)shl 7+144o)shl 8 ; FORTH
+ 000009F4  90000000     dd 22o shl 27 ; c
+ 000009F8  811E2000     
+    dd (((20o shl 4+2)shl 4+3)shl 7+142o)shl 12 ; stop
+ 000009FC  145C0000     
+    dd (((1 shl 4+4)shl 4+5)shl 7+140o)shl 13 ; read
+ 00000A00  B8B92000
+       dd ((((27o shl 4+1)shl 4+7)shl 4+2)shl 4+4)shl 11 ; write
+ 00000A04  69000000     dd (6 shl 5+22o)shl 23 ; nc
+ 00000A08  91C62AC0	
+  dd (((((22o shl 4+3)shl 5+21o)shl 5+21o)shl 4+5)shl 4+6)shl 5; comman d
+ 00000A0C  82274000	dd (((20o shl 4+4)shl 4+4)shl 7+164o)shl 12 ; seek
+ 00000A10  145C1300
+       dd ((((1 shl 4+4)shl 4+5)shl 7+140o)shl 5+23o)shl 8 ; ready
+		;       dd (((22o shl 5+24o)shl 4+1)shl 4+7)shl 14 ; clri
+ 00000A14  59100000	dd ((5 shl 5+22o)shl 4+2)shl 19 ; ACT
+ 00000A18  8643B800	dd (((20o shl 7+144o)shl 4+3) shl 5+27o)shl 11 ; SHOW
+ 00000A1C  A1AE0000	dd (((24o shl 4+3)shl 4+5)shl 7+140o)shl 12 ; LOAD
+ 00000A20  C8828000	dd (((144o shl 4+4)shl 4+1)shl 4+4)shl 13 ; here
+ 00000A24  FF472000	dd (((177o shl 5+24o)shl 4+7)shl 4+2)shl 12 ; ?lit
+ 00000A28  D7F80000	dd (153o shl 7+176o) shl 18 ; 3,
+ 00000A2C  D5F80000	dd (152o shl 7+176o) shl 18 ; 2,
+ 00000A30  D3F80000	dd (151o shl 7+176o) shl 18 ; 1,
+ 00000A34  FC000000	dd 176o shl 25 ; ,
+ 00000A38  A2420000
+       dd (((24o shl 4+4)shl 5+20o)shl 5+20o)shl 13 ; less
+ 00000A3C  E59A3880
+       dd (((162o shl 7+146o)shl 5+21o)shl 7+142o)shl 6 ; jump
+ 00000A40  59493110
+ dd (((((5 shl 5+22o)shl 5+22o)shl 4+4)shl 7+142o)shl 4+2)shl 3 ; accept
+ 00000A44  C4B80000     dd ((142o shl 4+5)shl 7+140o)shl 14 ; pad
+ 00000A48  41582000	
+      dd ((((4 shl 4+1)shl 4+5)shl 5+20o)shl 4+4)shl 11 ; erase
+ 00000A4C  91E29800	
+      dd (((22o shl 4+3)shl 7+142o)shl 5+23o)shl 11 ; copy
+ 00000A50  8A8F4000	dd (((21o shl 4+5)shl 4+1)shl 7+164o)shl 12 ; mark
+ 00000A54  48E22000	dd (((4 shl 5+21o)shl 7+142o)shl 4+2)shl 12 ; empt
+ 00000A58  48B90000	dd (((4 shl 5+21o)shl 4+7)shl 4+2)shl 15 ; emit
+ 00000A5C  C0F57200	
+      dd ((((140o shl 4+7)shl 5+25o)shl 4+7)shl 4+2)shl 8 ; digit
+ 00000A60  D4917200
+      dd ((((152o shl 4+4)shl 5+21o)shl 4+7)shl 4+2)shl 8 ; 2emit
+ 00000A64  EA000000      dd 165o shl 25 ; .
+ 00000A68  C9D40000      dd (144o shl 7+165o)shl 18 ; h.
+ 00000A6C  C9D58000      dd ((144o shl 7+165o)shl 4+6)shl 14 ; h.n
+ 00000A70  90800000      dd (22o shl 4+1)shl 23 ; CR
+ 00000A74  86259200
+     dd ((((20o shl 7+142o)shl 4+5)shl 5+22o)shl 4+4)shl 7 ; space
+ 00000A78  C0776000     dd (((140o shl 4+3)shl 5+27o)shl 4+6)shl 12 ; DOWN
+ 00000A7C  4C0E4000     dd (((4 shl 7+140o)shl 4+7)shl 4+2)shl 13 ; edit
+ 00000A80  40000000     dd 4 shl 28 ; E
+		;       dd (((26o shl 4+3)shl 4+6)shl 4+2)shl 15 ; font
+ 00000A84  A4400000	       dd (24o shl 5+21o)shl 22 ; lm
+ 00000A88  18800000	       dd (1 shl 5+21o)shl 23 ; rm
+ 00000A8C  A8AE2C80
+  dd ((((25o shl 4+1)shl 4+5)shl 7+142o)shl 7+144o)shl 5 ; graph ic
+ 00000A90  24CA4000  
+          dd (((2 shl 4+4)shl 7+145o)shl 4+2)shl 13 ; text
+	; dd (153o shl 7+140o)shl 18 ; 3d
+	; dd (((((1 shl 4+4)shl 4+6)shl 7+140o)shl 4+4)shl 4+1)shl 5 ; render
+	; dd ((((141o shl 4+4)shl 4+1)shl 4+2)shl 4+4)shl 9 ; verte x
+	; dd ((((26o shl 4+1)shl 4+3)shl 4+6)shl 4+2)shl 11 ; front
+	; dd ((2 shl 4+3)shl 7+142o)shl 17 ; top
+	; dd (((20o shl 4+7)shl 7+140o)shl 4+4)shl 12 ; side
+ 00000A94  E893C660
+          dd ((((164o shl 4+4)shl 5+23o)shl 7+143o)shl 4+3)shl 5 ; keybo ard
+ 00000A98  C098F300  dd (((140o shl 4+4)shl 7+143o)shl 7+146o)shl 7 ; debu g
+ 00000A9C  52000000	       dd (5 shl 4+2)shl 24 ; at
+ 00000AA0  F6A40000	       dd ((173o shl 4+5)shl 4+2)shl 17 ; +at
+ 00000AA4  CB300000	       dd (145o shl 5+23o)shl 20 ; xy
+ 00000AA8  B1E10000	       dd ((26o shl 4+3)shl 7+141o)shl 16 ; fov
+ 00000AAC  B3D8C000       dd (((26o shl 4+7)shl 5+26o)shl 4+3)shl 14 ; fifo
+ 00000AB0  C6794000       dd ((143o shl 4+3)shl 7+145o)shl 14 ; box
+ 00000AB4  A3B20000    dd (((24o shl 4+7)shl 4+6)shl 4+4)shl 15 ; line
+ 00000AB8  91D0C400		       
+         dd ((((22o shl 4+3)shl 5+24o)shl 4+3)shl 4+1)shl 10 ; color
+	;       dd (((22o shl 5+24o)shl 4+7)shl 7+142o)shl 11 ; clip
+ 00000ABC  3912B100
+ dd (((((3 shl 5+22o)shl 4+2)shl 4+5)shl 4+6)shl 4+2)shl 7 ; octant
+ 00000AC0  86200000    dd (20o shl 7+142o)shl 20 ; sp
+ 00000AC4  A2C08000    dd (((24o shl 4+5)shl 5+20o)shl 4+2)shl 14 ; last
+ 00000AC8  CCD89640  
+      dd (((((146o shl 4+6)shl 7+142o)shl 4+5)shl 5+22o))shl 5 ; unpac k
+		;    dd (((142o shl 4+5)shl 5+22o)shl 7+164o)shl 9 ; pack
+ 00000ACC  00000200 [		forth1 dd 512 dup (0)
+	    00000000
+	   ]
+				;macro2 dd offset cOR
+				;       dd offset cAND
+				;       dd offset PLUS
+ 000012CC 0000068E R		macro2 dd offset semi
+ 000012D0  000004F5 R		       dd offset cdup
+ 000012D4  000004DA R		       dd offset qdup
+ 000012D8  000004C4 R		       dd offset cdrop
+				;       dd offset nip
+ 000012DC  000006B2 R		       dd offset then
+ 000012E0  000006C5 R		       dd offset begin
+ 000012E4  00000080 [		       dd 128 dup (0)
+	    00000000
+	   ]
+ 000014E4 00001DD0 R		forth2 dd offset boot
+ 000014E8  00000285 R		       dd offset warm
+ 000014EC  000002D4 R		       dd offset PAUSE
+ 000014F0  00000448 R		       dd offset MACRO_
+ 000014F4  00000462 R		       dd offset FORTH
+ 000014F8  00000336 R		       dd offset c_
+ 000014FC  0000017C R		       dd offset stop
+ 00001500  0000021F R		       dd offset readf
+ 00001504  0000023A R		       dd offset writef
+ 00001508  00001E68 R		       dd offset nc_
+ 0000150C  00000268 R		       dd offset cmdf
+ 00001510  0000024E R		       dd offset seekf
+ 00001514  00000279 R		       dd offset readyf
+ 00001518  000002F1 R		       dd offset ACT
+ 0000151C  00000311 R		       dd offset SHOW
+ 00001520  00000741 R		       dd offset LOAD
+ 00001524  000006CB R		       dd offset here
+ 00001528  000006D6 R		       dd offset qlit
+ 0000152C  00000687 R		       dd offset COMMA3
+ 00001530  00000680 R		       dd offset COMMA2
+ 00001534  00000679 R		       dd offset COMMA1
+ 00001538  0000065D R		       dd offset COMMA
+ 0000153C  0000071D R		       dd offset less
+ 00001540  00000734 R		       dd offset jump
+ 00001544  0000249F R		       dd offset ACCEPT
+ 00001548  00002E52 R		       dd offset pad
+ 0000154C  00001DD6 R		       dd offset erase
+ 00001550  00001DE9 R		       dd offset copy
+ 00001554  0000033C R		       dd offset mark
+ 00001558  00000361 R		       dd offset empty
+ 0000155C  00001FE2 R		       dd offset emit
+ 00001560  00002709 R		       dd offset eDIG
+ 00001564  00002022 R		       dd offset emit2
+ 00001568  0000277A R		       dd offset dot10
+ 0000156C  00002735 R		       dd offset hdot
+ 00001570  00002723 R		       dd offset hdotn
+ 00001574  000021F6 R		       dd offset CR
+ 00001578  00002017 R		       dd offset space
+ 0000157C  0000217C R		       dd offset DOWN
+ 00001580  00002C37 R		       dd offset edit
+ 00001584  00002C3D R		       dd offset E
+				;       dd offset font
+ 00001588  00002210 R		       dd offset LMs
+ 0000158C  00002217 R		       dd offset RMs
+ 00001590  00001F4C R		       dd offset graphic
+ 00001594  0000205D R		       dd offset text1
+				;       dd offset set3d
+				;       dd offset render
+				;       dd offset vertex
+				;       dd offset front
+				;       dd offset top_
+				;       dd offset side
+ 00001598  000022A9 R		       dd offset keyboard
+ 0000159C  00001E10 R		       dd offset debug
+ 000015A0  0000221E R		       dd offset at
+ 000015A4  0000222D R		       dd offset pat
+ 000015A8  00001E73 R		       dd offset xy_
+ 000015AC  00001E7E R		       dd offset fov_
+ 000015B0  00001F4B R		       dd offset fifof
+ 000015B4  00002099 R		       dd offset box
+ 000015B8  0000207B R		       dd offset line
+ 000015BC  00001ED4 R		       dd offset color
+				;       dd offset clip
+ 000015C0  0000223E R		       dd offset octant
+ 000015C4  00001E89 R		       dd offset sps
+ 000015C8  00001E94 R		       dd offset last_
+ 000015CC  000027CB R		       dd offset unpack
+				;       dd offset pack
+ 000015D0  00000200 [		       dd 512 dup (0)
+	    00000000
+	   ]
+
+ 00001DD0  B0 FE		boot: mov  AL, 0FEh ; Reset
+ 00001DD2  E6 64		    out  64h, AL
+ 00001DD4  EB FE		    jmp  $
+
+ 00001DD6  8B C8		erase: mov  ECX, EAX
+ 00001DD8  C1 E1 08		    shl  ECX, 8
+				    DROP
+ 00001DDB  AD		     1	    lodsd
+ 00001DDC  57			    push EDI
+ 00001DDD  8B F8		     mov  EDI, EAX
+ 00001DDF  C1 E7 0A		     shl  EDI, 2+8
+ 00001DE2  33 C0		     xor  EAX, EAX
+ 00001DE4  F3/ AB		     rep stosd
+ 00001DE6  5F			    pop EDI
+				    DROP
+ 00001DE7  AD		     1	    lodsd
+ 00001DE8  C3			    ret
+
+				;move: mov  ECX, EAX
+				;    DROP
+				;    mov  EDI, EAX
+				;    shl  EDI, 2
+				;    DROP
+				;    push ESI
+				;     mov  ESI, EAX
+				;     shl  ESI, 2
+				;     rep movsd
+				;    pop  ESI
+				;    DROP
+				;    ret
+
+ 00001DE9  83 F8 0C		copy: cmp  EAX, 12
+ 00001DEC  0F 82 FFFFE613	    jc   ABORT1
+ 00001DF2  8B F8		    mov  EDI, EAX
+ 00001DF4  C1 E7 0A		    shl  EDI, 2+8
+ 00001DF7  56			    push ESI
+ 00001DF8  8B 35 00002AA0 R	     mov  ESI, blk
+ 00001DFE  C1 E6 0A		     shl  ESI, 2+8
+ 00001E01  B9 00000100		     mov  ECX, 256
+ 00001E06  F3/ A5		     rep movsd
+ 00001E08  5E			    pop  ESI
+ 00001E09  A3 00002AA0 R	    mov  blk, EAX
+				    DROP
+ 00001E0E  AD		     1	    lodsd
+ 00001E0F  C3			    ret
+
+ 00001E10		debug: ;; mov  xy, 1*10000h+(vc-2)*ih+0
+ 00001E10  C7 05 00001E54 R	    mov  xy, 3*10000h+(vc-2)*ih+3
+	   000302B5
+				    DUP_
+ 00001E1A  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00001E1D  89 06	     1	    mov  [ESI], EAX
+ 00001E1F  A1 000002C5 R	    mov  EAX, God
+ 00001E24  FF 30		    push [EAX]
+ 00001E26  E8 0000091E		    call dot
+				    DUP_
+ 00001E2B  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00001E2E  89 06	     1	    mov  [ESI], EAX
+ 00001E30  58			    pop  EAX
+ 00001E31  E8 00000913		    call dot
+				    DUP_
+ 00001E36  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00001E39  89 06	     1	    mov  [ESI], EAX
+ 00001E3B  A1 000002CE R	    mov  EAX, main
+ 00001E40  E8 00000904		    call dot
+				    DUP_
+ 00001E45  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00001E48  89 06	     1	    mov  [ESI], EAX
+ 00001E4A  8B C6		    mov  EAX, ESI
+ 00001E4C  E9 000008F8		    jmp  dot
+
+				;;iw equ 16+4
+				;;ih equ 24+0
+ = 00000016			iw equ 16+6
+ = 0000001E			ih equ 24+6
+				;;hc equ 40
+ = 0000002E			hc equ hp/iw ; 46
+ = 00000019			vc equ vp/ih ; 25
+				ALIGN 4
+				;;xy  dd 10000h
+				;;lm  dd 1
+ 00001E54 00030003		xy  dd 3*10000h+3
+ 00001E58 00000003		lm  dd 3
+ 00001E5C 000003F4		rm  dd hc*iw ; 1012
+ 00001E60 00000000		xycr dd 0
+ 00001E64 00004B00		fov dd 10*(2*vp+vp/2)
+
+ 00001E68			nc_: DUP_
+ 00001E68  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00001E6B  89 06	     1	    mov  [ESI], EAX
+ 00001E6D  B8 0000000C	    mov  EAX, (offset nc-offset start)/4
+ 00001E72  C3			    ret
+
+ 00001E73			xy_: DUP_
+ 00001E73  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00001E76  89 06	     1	    mov  [ESI], EAX
+ 00001E78  B8 00000795	    mov  EAX, (offset xy-offset start)/4
+ 00001E7D  C3			    ret
+
+ 00001E7E			fov_: DUP_
+ 00001E7E  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00001E81  89 06	     1	    mov  [ESI], EAX
+ 00001E83  B8 00000799	    mov  EAX, (offset fov-offset start)/4
+ 00001E88  C3			    ret
+
+ 00001E89			sps: DUP_
+ 00001E89  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00001E8C  89 06	     1	    mov  [ESI], EAX
+ 00001E8E  B8 000001D7	    mov  EAX, (offset spaces-offset start)/4
+ 00001E93  C3			    ret
+
+ 00001E94			last_: DUP_
+ 00001E94  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00001E97  89 06	     1	    mov  [ESI], EAX
+ 00001E99  B8 000001EC	    mov  EAX, (offset last-offset start)/4
+ 00001E9E  C3			    ret
+
+	include gen.asm ; cce.asm pio.asm ATI128.asm ATI64.asm gen.asm
+			      C ;Generic graphics
+C ;modified 8/06/01 for 800x600 operation Terry Loveall, loveall@qwest.net
+C ;remodified ras20040728 
+C ; for 1024x768 Ray St. Marie, rastm2@users.sourceforge.net
+			      C ALIGN 4
+ 00001EA0 01E80000	      C frame dd 2000000h-hp*vp*2 ; 32 M
+ 00001EA4 F0000000	      C displ dd 0f0000000h ; fujitsu
+ 00001EA8 0000F7DE	      C fore  dd 0f7deh
+ 00001EAC 00000000	      C xc    dd 0
+ 00001EB0 00000000	      C yc    dd 0
+			      C 
+ 00001EB4  C1 C8 08	      C rgb: ror  EAX, 8
+ 00001EB7  66| C1 E8 02	      C     shr  AX, 2
+ 00001EBB  C1 C8 06	      C     ror  EAX, 6
+ 00001EBE  C0 E8 03	      C     shr  AL, 3
+ 00001EC1  C1 C0 0B	      C     rol  EAX, 6+5
+ 00001EC4  25 0000F7DE	      C     and  EAX, 0f7deh
+ 00001EC9  C3		      C     ret
+			      C 
+ 00001ECA		      C white: DUP_
+ 00001ECA  8D 76 FC	     1C     lea  ESI, [ESI-4]
+ 00001ECD  89 06	     1C     mov  [ESI], EAX
+ 00001ECF  B8 00FFFFFF	      C     mov  EAX, 0ffffffh
+ 00001ED4  E8 FFFFFFDB	      C color: call rgb
+ 00001ED9  A3 00001EA8 R      C     mov  fore, EAX
+			      C     DROP
+ 00001EDE  AD		     1C     lodsd
+ 00001EDF  C3		      C     ret
+			      C 
+ 00001EE0  BA 00000CF8	      C north: mov  EDX, 0cf8h
+ 00001EE5  EF		      C     out  DX, EAX
+ 00001EE6  83 C2 04	      C     add  EDX, 4
+ 00001EE9  ED		      C     in   EAX, DX
+ 00001EEA  C3		      C     ret
+			      C 
+ 00001EEB  B8 80001008	      C dev: mov  EAX, 80001008h 
+                                 ; Find display, start at device 2
+ 00001EF0  B9 0000001E	      C     mov  ECX, 31-1 
+                                 ; end with AGP: 10008, bus 1, dev 0
+ 00001EF5		      C @@:     DUP_
+ 00001EF5  8D 76 FC	     1C     lea  ESI, [ESI-4]
+ 00001EF8  89 06	     1C     mov  [ESI], EAX
+ 00001EFA  E8 FFFFFFE1	      C         call north
+ 00001EFF  25 FF000000	      C         and  EAX, 0ff000000h
+ 00001F04  3D 03000000	      C         cmp  EAX, 3000000h
+			      C         DROP
+ 00001F09  AD		     1C     lodsd
+ 00001F0A  74 08	      C         jz   @f
+ 00001F0C  05 00000800	      C         add  EAX, 800h
+			      C         next @b
+ 00001F11  49		     1C     dec  ECX
+ 00001F12  75 E1	     1C     jnz  @b
+ 00001F14  C3		      C @@: ret
+			      C 
+ 00001F15  E8 FFFFFFD1	      C ati0: call dev
+ 00001F1A  83 48 FC 02	      C or   dword ptr [EAX-4], 2 ; Enable memory
+ 00001F1E  04 1C	      C     add  AL, 24h-8 ; look for prefetch
+ 00001F20  B1 05	      C     mov  CL, 5
+ 00001F22		      C @@:     DUP_
+ 00001F22  8D 76 FC	     1C     lea  ESI, [ESI-4]
+ 00001F25  89 06	     1C     mov  [ESI], EAX
+ 00001F27  E8 FFFFFFB4	      C         call north
+ 00001F2C  34 08	      C         xor  AL, 8
+ 00001F2E  74 14	      C         jz   @f
+			      C         DROP
+ 00001F30  AD		     1C     lodsd
+ 00001F31  83 E8 04	      C         sub  EAX, 4
+			      C         next @b
+ 00001F34  49		     1C     dec  ECX
+ 00001F35  75 EB	     1C     jnz  @b
+			      C     DUP_
+ 00001F37  8D 76 FC	     1C     lea  ESI, [ESI-4]
+ 00001F3A  89 06	     1C     mov  [ESI], EAX
+ 00001F3C  E8 FFFFFF9F	      C     call north
+ 00001F41  83 E0 F0	      C     and  EAX, 0fffffff0h
+ 00001F44  A3 00001EA4 R      C @@: mov  displ, EAX
+			      C     DROP
+ 00001F49  AD		     1C     lodsd
+ 00001F4A  C3		      C     ret
+			      C 
+ 00001F4B		      C fifof: DROP
+ 00001F4B  AD		     1C     lodsd
+ 00001F4C  C3		      C graphic: ret
+			      C 
+ 00001F4D		      C switch:
+			      C ;    DUP_
+ 00001F4D  56		      C     push ESI
+ 00001F4E  8B 35 00001EA0 R   C     mov  ESI, frame
+ 00001F54  57		      C     push EDI
+ 00001F55  8B 3D 00001EA4 R   C     mov  EDI, displ 
+                                      ; 0f2000000h eMonster Nvidia
+			      C ;    xor  EAX, EAX
+ 00001F5B  B9 00060000	      C     mov  ECX, hp*vp/2
+			      C ;@@:     lodsd
+			      C ;        add  EAX, [EDI]
+			      C ;        rcr  EAX, 1
+			      C ;        and  EAX, 0f7def7deh
+			      C ;        stosd
+			      C ;        next @b
+ 00001F60  F3/ A5	      C     rep movsd
+ 00001F62  5F		      C     pop  EDI
+ 00001F63  5E		      C     pop  ESI
+			      C ;    DROP
+ 00001F64  E9 FFFFE36B	      C     jmp  PAUSE
+			      C 
+ 00001F69  8B 3D 00001E54 R   C clip: mov  EDI, xy
+ 00001F6F  8B CF	      C     mov  ECX, EDI
+ 00001F71  66| 85 C9	      C     test CX, CX
+ 00001F74  79 02	      C     jns  @f
+ 00001F76  33 C9	      C         xor  ECX, ECX
+ 00001F78  81 E1 0000FFFF     C @@: and  ECX, 0ffffh
+ 00001F7E  89 0D 00001EB0 R   C     mov  yc, ECX
+ 00001F84  69 C9 00000800     C     imul ECX, hp*2
+			      C ;    shl  ECX, 10+1
+ 00001F8A  C1 FF 10	      C     sar  EDI, 16
+ 00001F8D  79 02	      C     jns  @f
+ 00001F8F  33 FF	      C         xor  EDI, EDI
+ 00001F91  89 3D 00001EAC R   C @@: mov  xc, EDI
+ 00001F97  8D 3C 79	      C     lea  EDI, [EDI*2+ECX]
+ 00001F9A  03 3D 00001EA0 R   C     add  EDI, frame
+ 00001FA0  C3		      C     ret
+			      C 
+ 00001FA1  66| AD	      C bit16: lodsw
+ 00001FA3  86 C4	      C     xchg AL, AH
+ 00001FA5  B9 00000010	      C     mov  ECX, 16
+ 00001FAA  66| D1 E0	      C b16: shl  AX, 1
+ 00001FAD  73 03	      C         jnc  @f
+ 00001FAF  66| 89 17	      C             mov  [EDI], DX
+ 00001FB2  83 C7 02	      C @@:     add  EDI, 2
+			      C         next b16
+ 00001FB5  49		     1C     dec  ECX
+ 00001FB6  75 F2	     1C     jnz  b16
+ 00001FB8  C3		      C     ret
+			      C 
+ 00001FB9  66| AD	      C bit32: lodsw
+ 00001FBB  86 C4	      C     xchg AL, AH
+ 00001FBD  B9 00000010	      C     mov  ECX, 16
+ 00001FC2  D1 E0	      C b32: shl  EAX, 1
+ 00001FC4  73 15	      C         jnc  @f
+ 00001FC6  66| 89 17	      C             mov  [EDI], DX
+ 00001FC9  66| 89 57 02	      C             mov  [EDI+2], DX
+ 00001FCD  66| 89 97	      C             mov  [EDI+hp*2], DX
+	   00000800
+ 00001FD4  66| 89 97	      C             mov  [EDI+hp*2+2], DX
+	   00000802
+ 00001FDB  83 C7 04	      C @@:     add  EDI, 4
+			      C         next b32
+ 00001FDE  49		     1C     dec  ECX
+ 00001FDF  75 E1	     1C     jnz  b32
+ 00001FE1  C3		      C     ret
+			      C 
+ 00001FE2  E8 000001FF	      C emit: call qcr
+ 00001FE7  56		      C     push ESI
+ 00001FE8  57		      C     push EDI
+ 00001FE9  52		      C     push EDX
+ 00001FEA  6B C0 30	      C      imul EAX, 16*24/8
+ 00001FED  8D B0 00003000     C      lea  ESI, icons[EAX]
+ 00001FF3  E8 FFFFFF71	      C      call clip
+ 00001FF8  8B 15 00001EA8 R   C      mov  EDX, fore
+ 00001FFE  B9 00000018	      C      mov  ECX, 24
+ 00002003  51		      C @@:     push ECX
+ 00002004  E8 FFFFFF98	      C         call bit16
+ 00002009  81 C7 000007E0     C         add  EDI, (hp-16)*2
+ 0000200F  59		      C         pop  ECX
+			      C         next @b
+ 00002010  49		     1C     dec  ECX
+ 00002011  75 F0	     1C     jnz  @b
+ 00002013  5A		      C     pop  EDX
+ 00002014  5F		      C     pop  EDI
+ 00002015  5E		      C     pop  ESI
+ 00002016		      C BL_: DROP
+ 00002016  AD		     1C     lodsd
+ 00002017  81 05 00001E54 R   C SPACE: add  xy, iw*10000h
+	   00160000
+ 00002021  C3		      C     ret
+			      C 
+ 00002022  56		      C emit2: push ESI
+ 00002023  57		      C     push EDI
+ 00002024  52		      C     push EDX
+ 00002025  6B C0 30	      C      imul EAX, 16*24/8
+ 00002028  8D B0 00003000     C      lea  ESI, icons[EAX]
+ 0000202E  E8 FFFFFF36	      C      call clip
+ 00002033  8B 15 00001EA8 R   C      mov  EDX, fore
+ 00002039  B9 00000018	      C      mov  ECX, 24
+ 0000203E  51		      C @@:     push ECX
+ 0000203F  E8 FFFFFF75	      C         call bit32
+ 00002044  81 C7 00000FC0     C         add  EDI, (2*hp-16*2)*2
+ 0000204A  59		      C         pop  ECX
+			      C         next @b
+ 0000204B  49		     1C     dec  ECX
+ 0000204C  75 F0	     1C     jnz  @b
+ 0000204E  5A		      C     pop  EDX
+ 0000204F  5F		      C     pop  EDI
+ 00002050  5E		      C     pop  ESI
+ 00002051  81 05 00001E54 R   C     add  xy, iw*10000h*2
+	   002C0000
+			      C     DROP
+ 0000205B  AD		     1C     lodsd
+ 0000205C  C3		      C     ret
+			      C 
+ 0000205D  E8 FFFFFE68	      C text1: call WHITE
+			      C ;;    mov  lm, 1
+ 00002062  C7 05 00001E58 R   C     mov  lm, 3
+	   00000003
+ 0000206C  C7 05 00001E5C R   C     mov  rm, hc*iw
+	   000003F4
+ 00002076  E9 00000152	      C     jmp  TOP
+			      C 
+ 0000207B  E8 FFFFFEE9	      C line: call clip
+ 00002080  8B 0E	      C     mov  ECX, [ESI]
+ 00002082  D1 E1	      C     shl  ECX, 1
+ 00002084  2B F9	      C     sub  EDI, ECX
+ 00002086  8B C8	      C     mov  ECX, EAX
+ 00002088  A1 00001EA8 R      C     mov  EAX, fore
+ 0000208D  F3/ 66| AB	      C     rep stosw
+ 00002090  FF 05 00001E54 R   C     inc  xy
+			      C     DROP
+ 00002096  AD		     1C     lodsd
+			      C     DROP
+ 00002097  AD		     1C     lodsd
+ 00002098  C3		      C     ret
+			      C 
+ 00002099  E8 FFFFFECB	      C box: call clip
+ 0000209E  3D 00000301	      C     cmp  EAX, vp+1
+ 000020A3  78 05	      C     js   @f
+ 000020A5  B8 00000300	      C         mov  EAX, vp
+ 000020AA  8B C8	      C @@: mov  ECX, EAX
+ 000020AC  2B 0D 00001EB0 R   C     sub  ECX, yc
+ 000020B2  7E 31	      C     jng  no
+ 000020B4  81 3E 00000401     C     cmp  dword ptr [ESI], hp+1
+ 000020BA  78 06	      C     js   @f
+ 000020BC  C7 06 00000400     C         mov  dword ptr [ESI], hp
+ 000020C2  A1 00001EAC R      C @@: mov  EAX, xc
+ 000020C7  29 06	      C     sub  [ESI], EAX
+ 000020C9  7E 1A	      C     jng  no
+ 000020CB  BA 00000400	      C     mov  EDX, hp
+ 000020D0  2B 16	      C     sub  EDX, [ESI]
+ 000020D2  D1 E2	      C     shl  EDX, 1
+ 000020D4  A1 00001EA8 R      C     mov  EAX, fore
+ 000020D9  51		      C @@:     push ECX
+ 000020DA  8B 0E	      C          mov  ECX, [ESI]
+ 000020DC  F3/ 66| AB	      C          rep stosw
+ 000020DF  03 FA	      C          add  EDI, EDX
+ 000020E1  59		      C         pop  ECX
+			      C         next @b
+ 000020E2  49		     1C     dec  ECX
+ 000020E3  75 F4	     1C     jnz  @b
+ 000020E5		      C no: DROP
+ 000020E5  AD		     1C     lodsd
+			      C     DROP
+ 000020E6  AD		     1C     lodsd
+ 000020E7  C3		      C     ret
+			      C 
+
+ = 00FFFF00			yellow equ 0ffff00h
+ 000020E8			CYAN: DUP_
+ 000020E8  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000020EB  89 06	     1	    mov  [ESI], EAX
+ 000020ED  B8 0000FFFF		    mov  EAX, 0ffffh
+ 000020F2  E9 FFFFFDDD		    jmp  color
+ 000020F7			MAGENTA: DUP_
+ 000020F7  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000020FA  89 06	     1	    mov  [ESI], EAX
+ 000020FC  B8 00FF00FF		    mov  EAX, 0ff00ffh
+ 00002101  E9 FFFFFDCE		    jmp  color
+ 00002106			SILVER: DUP_
+ 00002106  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002109  89 06	     1	    mov  [ESI], EAX
+ 0000210B  B8 00C0C0C0		    mov  EAX, 0c0c0c0h
+ 00002110  E9 FFFFFDBF		    jmp  color
+ 00002115			BLUE: DUP_
+ 00002115  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002118  89 06	     1	    mov  [ESI], EAX
+ 0000211A  B8 004040FF		    mov  EAX, 4040ffh
+ 0000211F  E9 FFFFFDB0		    jmp  color
+ 00002124			RED: DUP_
+ 00002124  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002127  89 06	     1	    mov  [ESI], EAX
+ 00002129  B8 00FF0000		    mov  EAX, 0ff0000h
+ 0000212E  E9 FFFFFDA1		    jmp  color
+ 00002133			GREEN: DUP_
+ 00002133  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002136  89 06	     1	    mov  [ESI], EAX
+ 00002138  B8 8000FF00		    mov  EAX, 8000ff00h
+ 0000213D  E9 FFFFFD92		    jmp  color
+
+ 00002142  0000000B [		history db 11 dup (0)
+	    00
+	   ]
+ 0000214D  56			ECHO_: push ESI
+ 0000214E  B9 0000000A		     mov  ECX, 11-1
+ 00002153  8D 3D 00002142 R	     lea  EDI, history
+ 00002159  8D 77 01		     lea  ESI, [1+EDI]
+ 0000215C  F3/ A4		     rep movsb
+ 0000215E  5E			    pop  ESI
+ 0000215F  A2 0000214C R	    mov  history+11-1, AL
+				    DROP
+ 00002164  AD		     1	    lodsd
+ 00002165  C3			    ret
+
+ 00002166			RIGHT: DUP_
+ 00002166  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002169  89 06	     1	    mov  [ESI], EAX
+ 0000216B  B9 0000000B		    mov  ECX, 11
+ 00002170  8D 3D 00002142 R	    lea  EDI, history
+ 00002176  33 C0		    xor  EAX, EAX
+ 00002178  F3/ AA		    rep stosb
+				    DROP
+ 0000217A  AD		     1	    lodsd
+ 0000217B  C3			    ret
+
+ 0000217C			DOWN: DUP_
+ 0000217C  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 0000217F  89 06	     1	    mov  [ESI], EAX
+ 00002181  33 D2		    xor  EDX, EDX
+ 00002183  B9 0000001E		    mov  ECX, ih
+ 00002188  F7 F1		    div  ECX
+ 0000218A  8B C2		    mov  EAX, EDX
+			;;    add  EDX, 1*10000h+8000h-ih+0
+ 0000218C  81 C2 00037FE5	    add  EDX, 3*10000h+8000h-ih+3
+ 00002192  89 15 00001E54 R	    mov  xy, EDX
+ 00002198  85 C0		ZERO: test EAX, EAX
+ 0000219A  B8 00000000		    mov  EAX, 0
+ 0000219F  75 01		    jnz  @f
+ 000021A1  40			        inc  EAX
+ 000021A2  C3			@@: ret
+
+ 000021A3			blank: DUP_
+ 000021A3  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000021A6  89 06	     1	    mov  [ESI], EAX
+ 000021A8  33 C0		    xor  EAX, EAX
+ 000021AA  A3 00001E54 R	    mov  xy, EAX
+ 000021AF  E8 FFFFFD20		    call color
+				    DUP_
+ 000021B4  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000021B7  89 06	     1	    mov  [ESI], EAX
+ 000021B9  B8 00000400		    mov  EAX, hp
+				    DUP_
+ 000021BE  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000021C1  89 06	     1	    mov  [ESI], EAX
+ 000021C3  B8 00000300		    mov  EAX, vp
+ 000021C8  E9 FFFFFECC		    jmp  box
+
+ 000021CD  8B 0D 00001E58 R	TOP: mov  ECX, lm
+ 000021D3  C1 E1 10		    shl  ECX, 16
+				;;    add  ECX, 0
+ 000021D6  83 C1 03		    add  ECX, 3
+ 000021D9  89 0D 00001E54 R	    mov  xy, ECX
+ 000021DF  89 0D 00001E60 R	    mov  xycr, ECX
+ 000021E5  C3			    ret
+
+ 000021E6  66| 8B 0D		qcr: mov  CX, word ptr xy+2
+	   00001E56 R
+ 000021ED  66| 3B 0D		    cmp  CX, word ptr rm
+	   00001E5C R
+ 000021F4  78 19		    js   @f
+ 000021F6  8B 0D 00001E58 R	cr: mov  ECX, lm
+ 000021FC  C1 E1 10		    shl  ECX, 16
+ 000021FF  66| 8B 0D		    mov  CX, word ptr xy
+	   00001E54 R
+ 00002206  83 C1 1E		    add  ECX, ih
+ 00002209  89 0D 00001E54 R	    mov  xy, ECX
+ 0000220F  C3			@@: ret
+
+ 00002210  A3 00001E58 R	LMs: mov  lm, EAX
+				    DROP
+ 00002215  AD		     1	    lodsd
+ 00002216  C3			    ret
+
+ 00002217  A3 00001E5C R	RMs: mov  rm, EAX
+				    DROP
+ 0000221C  AD		     1	    lodsd
+ 0000221D  C3			    ret
+
+ 0000221E  66| A3		at: mov  word ptr xy, AX
+	   00001E54 R
+				    DROP
+ 00002224  AD		     1	    lodsd
+ 00002225  66| A3		    mov  word ptr xy+2, AX
+	   00001E56 R
+				    DROP
+ 0000222B  AD		     1	    lodsd
+ 0000222C  C3			    ret
+
+ 0000222D  66| 01 05		pAT: add  word ptr xy, AX
+	   00001E54 R
+				    DROP
+ 00002234  AD		     1	    lodsd
+ 00002235  66| 01 05		    add  word ptr xy+2, AX
+	   00001E56 R
+				    DROP
+ 0000223C  AD		     1	    lodsd
+ 0000223D  C3			    ret
+
+				;cl1: xor  EAX, EAX
+				;    mov  [ESI], EAX
+				;    ret
+				;clip: movsx EDX, word ptr xy
+				;    cmp  EDX, vp
+				;    jns  cl1
+				;    add  EAX, EDX
+				;    js   cl1
+				;    test EDX, EDX
+				;    jns  @f
+				;        xor  EDX, EDX
+				;@@: cmp  EAX, vp
+				;    js   @f
+				;        mov  EAX, vp
+				;@@: sub  EAX, EDX
+				;    mov  word ptr xy, DX
+				;    movsx EDX, word ptr xy+2
+				;    cmp  EDX, hp
+				;    jns  cl1
+				;    add  [ESI], EDX
+				;    js   cl1
+				;    test EDX, EDX
+				;    jns  @f
+				;        xor  EDX, EDX
+				;@@: cmp  dword ptr [ESI], hp
+				;    js   @f
+				;        mov  dword ptr [ESI], hp
+				;@@: sub  [ESI], EDX
+				;    mov  word ptr xy+2, DX
+				;    ret
+
+ 0000223E			octant: DUP_
+ 0000223E  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002241  89 06	     1	    mov  [ESI], EAX
+ 00002243  B8 00000043	
+          mov  EAX, 43h ; poly -last y+ x+ ;23h ; last y+ x+
+ 00002248  8B 56 04		    mov  EDX, [4+ESI]
+ 0000224B  85 D2		    test EDX, EDX
+ 0000224D  79 07		    jns  @f
+ 0000224F  F7 DA		        neg  EDX
+ 00002251  89 56 04		        mov  [4+ESI], EDX
+ 00002254  34 01		        xor  AL, 1
+ 00002256  3B 16		@@: cmp  EDX, [ESI]
+ 00002258  79 02		    jns  @f
+ 0000225A  34 04		        xor  AL, 4
+ 0000225C  C3			@@: ret
+
+				; Keyboard
+ 0000225D  83 C7 0C		EIGHT: add  EDI, 12
+ 00002260  E8 00000008		    call FOUR
+ 00002265  E8 FFFFFDAD		    call SPACE
+ 0000226A  83 EF 10		    sub  EDI, 16
+ 0000226D  B9 00000004		FOUR: mov  ECX, 4
+ 00002272  51			FOUR1:  push ECX
+				        DUP_
+ 00002273  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002276  89 06	     1	    mov  [ESI], EAX
+ 00002278  33 C0		        xor  EAX, EAX
+ 0000227A  8A 47 04		        mov  AL, [4+EDI]
+ 0000227D  47			        inc  EDI
+ 0000227E  E8 FFFFFD5F		        call EMIT
+ 00002283  59			        pop  ECX
+				        next FOUR1
+ 00002284  49		     1	    dec  ECX
+ 00002285  75 EB	     1	    jnz  FOUR1
+ 00002287  C3			    ret
+
+ 00002288  BF 0009F444		stack: mov  EDI, Godd-4
+ 0000228D  8B 15 000002C5 R	@@: mov  EDX, God
+ 00002293  39 3A		    cmp  [EDX], EDI
+ 00002295  73 11		    jnc  @f
+				        DUP_
+ 00002297  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 0000229A  89 06	     1	    mov  [ESI], EAX
+ 0000229C  8B 07		        mov  EAX, [EDI]
+ 0000229E  83 EF 04		        sub  EDI, 4
+ 000022A1  E8 000004CB		        call qDOT
+ 000022A6  EB E5		        jmp  @b
+ 000022A8  C3			@@: ret
+
+ 000022A9  E8 FFFFFDAF		KEYBOARD: call text1
+ 000022AE  8B 3D 00002478 R	    mov  EDI, board
+				    DUP_
+ 000022B4  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000022B7  89 06	     1	    mov  [ESI], EAX
+ 000022B9  A1 00002488 R	    mov  EAX, keyc
+ 000022BE  E8 FFFFFC11		    call color
+ 000022C3  C7 05 00001E5C R	    mov  rm, hc*iw
+	   000003F4
+			;;    mov  lm, (hc-9)*iw
+			;;    mov  xy, ((hc-9)*iw)*10000h+(vc-4)*ih
+ 000022CD  C7 05 00001E58 R	    mov  lm, hp-9*iw+3
+	   0000033D
+ 000022D7  C7 05 00001E54 R	mov  xy, (hp-9*iw+3)*10000h+vp-4*ih+3
+	   033D028B
+ 000022E1  E8 FFFFFF77		    call EIGHT
+ 000022E6  E8 FFFFFF72		    call EIGHT
+ 000022EB  E8 FFFFFF6D		    call EIGHT
+ 000022F0  E8 FFFFFF01		    call CR
+ 000022F5  81 05 00001E54 R	    add  xy, 4*iw*10000h
+	   00580000
+ 000022FF  8B 3D 0000247C R	    mov  EDI, shift
+ 00002305  83 C7 0C		    add  EDI, 4*4-4
+ 00002308  B9 00000003		    mov  ECX, 3
+ 0000230D  E8 FFFFFF60		    call FOUR1
+				;;    mov  lm, 1
+				;;    mov  word ptr xy+2, 0
+ 00002312  C7 05 00001E58 R	    mov  lm, 3
+	   00000003
+ 0000231C  66| C7 05		    mov  word ptr xy+2, 3
+	   00001E56 R
+	   0003
+ 00002325  E8 FFFFFF5E		    call stack
+			        ;;    mov  word ptr xy+2, (hc-11-9)*iw
+ 0000232A  66| C7 05		    mov  word ptr xy+2, hp-(11+9)*iw+3
+	   00001E56 R
+	   024B
+ 00002333  8D 3D 0000213E R	    lea  EDI, history-4
+ 00002339  B9 0000000B		    mov  ECX, 11
+ 0000233E  E9 FFFFFF2F		    jmp  FOUR1
+
+ 00002343 0D 0A 01 0C		alpha db 15o, 12o,  1 , 14o
+ 00002347  14 02 06 08		      db 24o,  2 ,  6 , 10o
+ 0000234B  13 09 0F 11		      db 23o, 11o, 17o, 21o
+ 0000234F  12 0B 0E 07		      db 22o, 13o, 16o,  7
+ 00002353  05 03 04 16		      db  5 ,  3 ,  4 , 26o
+ 00002357  17 24 15 10		      db 27o, 44o, 25o, 20o
+ 0000235B 19 1A 1B 00		graphics db 31o, 32o, 33o,  0 
+ 0000235F  1C 1D 1E 18		         db 34o, 35o, 36o, 30o
+ 00002363  1F 20 21 2F		         db 37o, 40o, 41o, 57o
+ 00002367  29 28 2A 2C		         db 51o, 50o, 52o, 54o ; : ; ! @
+ 0000236B  26 22 25 2E		         db 46o, 42o, 45o, 56o ; Z J . ,
+ 0000236F  2D 27 2B 23		         db 55o, 47o, 53o, 43o ; * / + -
+ 00002373 19 1A 1B 00		numbers db 31o, 32o, 33o,  0
+ 00002377  1C 1D 1E 18		        db 34o, 35o, 36o, 30o
+ 0000237B  1F 20 21 00		        db 37o, 40o, 41o,  0
+ 0000237F  00 00 00 00		        db  0,   0 ,  0 ,  0
+ 00002383  00 00 00 00		        db  0,   0 ,  0 ,  0
+ 00002387  00 00 00 00		        db  0,   0 ,  0 ,  0
+ 0000238B 19 1A 1B 00		octals db 31o, 32o, 33o,  0
+ 0000238F  1C 1D 1E 18		       db 34o, 35o, 36o, 30o
+ 00002393  1F 20 21 00		       db 37o, 40o, 41o,  0
+ 00002397  00 05 13 0A		       db  0 ,  5 , 23o, 12o
+ 0000239B  00 10 04 0E		       db  0 , 20o,  4 , 16o
+ 0000239F  00 00 00 00		       db  0 ,  0 ,  0 ,  0
+ 000023A3  3C 04		LETTER: cmp  AL, 4
+ 000023A5  78 09		    js   @f
+ 000023A7  8B 15 00002478 R	        mov  EDX, board
+ 000023AD  8A 04 10		        mov  AL, [EDX][EAX]
+ 000023B0  C3			@@: ret
+
+ 000023B1 10 11 12 13 00   keys db 16, 17, 18, 19,  0,  0,  4,  5 ; 20
+	   00 04 05
+ 000023B9  06 07 00 00 00	db  6,  7,  0,  0,  0,  0, 20, 21
+	   00 14 15
+ 000023C1  16 17 00 00 08	db 22, 23,  0,  0,  8,  9, 10, 11 ; 40
+	   09 0A 0B
+ 000023C9  00 00 00 00 18	db  0,  0,  0,  0, 24, 25, 26, 27
+	   19 1A 1B
+ 000023D1  00 01 0C 0D 0E	db  0,  1, 12, 13, 14, 15,  0,  0 ; 60 N
+	   0F 00 00
+ 000023D9  03 02		     db  3,  2 ; alt space
+ 000023DB			KEY: DUP_
+ 000023DB  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000023DE  89 06	     1	    mov  [ESI], EAX
+ 000023E0  33 C0		    xor  EAX, EAX
+ 000023E2  E8 FFFFDEED		@@:     call PAUSE
+ 000023E7  E4 64		        in   AL, 144o
+ 000023E9  A8 01		        test AL, 1
+ 000023EB  74 F5		        jz   @b
+ 000023ED  E4 60		    in   AL, 140o
+ 000023EF  A8 F0		    test AL, 360o
+ 000023F1  74 EF		    jz   @b
+ 000023F3  3C 3A		    cmp  AL, 72o
+ 000023F5  73 EB		    jnc  @b
+ 000023F7  8A 80 000023A1 R	    mov  AL, [keys-20o+EAX]
+ 000023FD  C3			    ret
+
+				ALIGN 4
+ 00002400 0000249C R		graph0 dd offset nul0, offset nul0, 
+                                offset nul0, offset ALPH0
+	   0000249C R
+	   0000249C R
+	   00002688 R
+ 00002410  00 00 05 00		       db  0 ,  0 ,  5 , 0 ;     a
+ 00002414 00002599 R		graph1 dd offset WORD0, offset X, 
+                                offset LJ, offset ALPH
+	   00002532 R
+	   0000250B R
+	   000026B0 R
+ 00002424  15 25 05 00		       db 25o, 45o,  5 , 0 ; x . a
+ 00002428 0000249C R		alpha0 dd offset nul0, offset nul0, 
+                                offset NUMBER, offset STAR0
+	   0000249C R
+	   00002628 R
+	   0000269A R
+ 00002438  00 21 2D 00		       db  0 , 41o, 55o, 0 ;   9 *
+ 0000243C 00002599 R		alpha1 dd offset WORD0, offset X, 
+                                offset LJ, offset GRAPH
+	   00002532 R
+	   0000250B R
+	   000026C2 R
+ 0000244C  15 25 2D 00		       db 25o, 45o, 55o, 0 ; x . *
+ 00002450 0000249C R		 numb0 dd offset nul0, offset MINUS, 
+                                 offset ALPHn, offset OCTAL
+	   0000261E R
+	   00002687 R
+	   000025DF R
+ 00002460  23 05 0E 00		       db 43o,  5 , 16o, 0 ; - a f
+ 00002464 00002625 R		 numb1 dd offset NUMBER0, offset Xn, 
+                                 offset ENDN, offset NUMBER0
+	   000025F8 R
+	   0000267B R
+	   00002625 R
+ 00002474  15 25 00 00		       db 25o, 45o,  0 , 0 ; x .
+
+ 00002478 0000233F R		board   dd offset alpha-4
+ 0000247C 00002428 R		shift   dd offset alpha0
+ 00002480 0000000A		base    dd 10
+ 00002484 000025A1 R		current dd offset decimal
+ 00002488 00FFFF00		keyc    dd yellow
+ 0000248C 00000001		chars   dd 1
+ 00002490 000003B4 R		aword   dd offset EX1
+ 00002494 00000733 R		anumber dd offset nul
+ 00002498 00000001		words   dd 1
+
+ 0000249C			nul0: DROP
+ 0000249C  AD		     1	    lodsd
+ 0000249D  EB 16		    jmp  @f
+ 0000249F			ACCEPT:
+ 0000249F  C7 05 0000247C R	acceptn: mov  shift, offset alpha0
+	   00002428 R
+ 000024A9  8D 3D 0000233F R	    lea  EDI, alpha-4
+ 000024AF  89 3D 00002478 R	ACCEPT1: mov  board, EDI
+ 000024B5  E8 FFFFFF21		@@: call KEY
+ 000024BA  3C 04		    cmp  AL, 4
+ 000024BC  0F 89 0000021B	    jns  first
+ 000024C2  8B 15 0000247C R	    mov  EDX, shift
+ 000024C8  FF 24 82		    jmp  dword ptr [EDX+EAX*4]
+
+ 000024CB 1C			bits db 28
+ 000024CC  83 C0 50		@@: add  EAX, 120o
+ 000024CF  B1 07		    mov  CL, 7
+ 000024D1  EB 0D		    jmp  @f
+ 000024D3  3C 10		PACK: cmp  AL, 20o
+ 000024D5  73 F5		    jnc  @b
+ 000024D7  B1 04		        mov  CL, 4
+ 000024D9  A8 08		        test AL, 10o
+ 000024DB  74 03		        jz   @f
+ 000024DD  41			        inc  ECX
+ 000024DE  34 18		        xor  AL, 30o
+ 000024E0  8B D0		@@: mov  EDX, EAX
+ 000024E2  8A E9		    mov  CH, CL
+ 000024E4  38 0D 000024CB R	@@: cmp  bits, CL
+ 000024EA  73 08		    jnc  @f
+ 000024EC  D0 E8		        shr  AL, 1
+ 000024EE  72 22		        jc   FULL
+ 000024F0  FE C9		        dec  CL
+ 000024F2  EB F0		        jmp  @b
+ 000024F4  D3 26		@@: shl  dword ptr [ESI], CL
+ 000024F6  31 06		    xor  [ESI], EAX
+ 000024F8  28 0D 000024CB R	    sub  bits, CL
+ 000024FE  C3			    ret
+
+ 000024FF  8A 0D 000024CB R	LJ0: mov  CL, bits
+ 00002505  80 C1 04		    add  CL, 4
+ 00002508  D3 26		    shl  dword ptr [ESI], CL
+ 0000250A  C3			    ret
+
+ 0000250B  E8 FFFFFFEF		LJ: call LJ0
+				    DROP
+ 00002510  AD		     1	    lodsd
+ 00002511  C3			    ret
+
+ 00002512  E8 FFFFFFE8		FULL: call LJ0
+ 00002517  FF 05 00002498 R	    inc  words
+ 0000251D  C6 05 000024CB R	    mov  bits, 28
+	   1C
+ 00002524  28 2D 000024CB R	    sub  bits, CH
+ 0000252A  8B C2		    mov  EAX, EDX
+				    DUP_
+ 0000252C  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 0000252F  89 06	     1	    mov  [ESI], EAX
+ 00002531  C3			    ret
+
+ 00002532  E8 FFFFFC2F		X:  call RIGHT
+ 00002537  A1 00002498 R	    mov  EAX, words
+ 0000253C  8D 34 86		    lea  ESI, [EAX*4+ESI]
+				    DROP
+ 0000253F  AD		     1	    lodsd
+ 00002540  E9 FFFFFF5A		    jmp  ACCEPT
+
+ 00002545  E8 FFFFFC1C		WORD_: call RIGHT
+ 0000254A  C7 05 00002498 R	    mov  words, 1
+	   00000001
+ 00002554  C7 05 0000248C R	    mov  chars, 1
+	   00000001
+				    DUP_
+ 0000255E  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002561  89 06	     1	    mov  [ESI], EAX
+ 00002563  C7 06 00000000	    mov  dword ptr [ESI], 0
+ 00002569  C6 05 000024CB R	    mov  bits, 28
+	   1C
+ 00002570  E8 FFFFFE2E		WORD1:  call LETTER
+ 00002575  79 09		        jns  @f
+ 00002577  8B 15 0000247C R	            mov  EDX, shift
+ 0000257D  FF 24 82		            jmp  dword ptr [EDX+EAX*4]
+ 00002580  84 C0		@@:     test AL, AL
+ 00002582  74 15		        jz   WORD0
+				        DUP_
+ 00002584  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002587  89 06	     1	    mov  [ESI], EAX
+ 00002589  E8 FFFFFBBF		        call ECHO_
+ 0000258E  E8 FFFFFF40		        call PACK
+ 00002593  FF 05 0000248C R	        inc  chars
+ 00002599			WORD0:  DROP
+ 00002599  AD		     1	    lodsd
+ 0000259A  E8 FFFFFE3C		        call KEY
+ 0000259F  EB CF		        jmp  WORD1
+
+ 000025A1  C7 05 00002480 R	decimal: mov  base, 10
+	   0000000A
+ 000025AB  C7 05 0000247C R	    mov  shift, offset numb0
+	   00002450 R
+ 000025B5  C7 05 00002478 R	    mov  board, offset numbers-4
+	   0000236F R
+ 000025BF  C3			    ret
+
+ 000025C0  C7 05 00002480 R	hex: mov  base, 16
+	   00000010
+ 000025CA  C7 05 0000247C R	    mov  shift, offset numb0 ; oct0
+	   00002450 R
+ 000025D4  C7 05 00002478 R	    mov  board, offset octals-4
+	   00002387 R
+ 000025DE  C3			    ret
+
+ 000025DF  81 35 00002484 R  octal: 
+
+    xor current, (offset decimal-offset start) xor (offset hex-offset start)
+
+	   00000061
+ 000025E9  80 35 00002462 R	xor  byte ptr numb0+18, 41o xor 16o ; f vs 9
+	   2F
+ 000025F0  FF 15 00002484 R	    call current
+ 000025F6  EB 2D		    jmp  NUMBER0
+
+ 000025F8			Xn: DROP
+ 000025F8  AD		     1	    lodsd
+				    DROP
+ 000025F9  AD		     1	    lodsd
+ 000025FA  E9 FFFFFEA0		    jmp  ACCEPTn
+
+				;      db  0,  0,  0,  0
+ 000025FF 0E 0A 00 00		digit db 14, 10,  0,  0
+ 00002603  00 00 0C 00 00	      db  0,  0, 12,  0,  0,  0, 15,  0
+	   00 0F 00
+ 0000260B  0D 00 00 0B 00	      db 13,  0,  0, 11,  0,  0,  0,  0
+	   00 00 00
+ 00002613  00 01 02 03 04	      db  0,  1,  2,  3,  4,  5,  6,  7
+	   05 06 07
+ 0000261B  08 09		      db  8,  9
+ 0000261D 00			sign db 0
+ 0000261E			MINUS: ; mov  AL, 43o ; -
+ 0000261E  A2 0000261D R	    mov  sign, AL
+ 00002623  EB 49		    jmp  NUMBER2
+
+ 00002625			NUMBER0: DROP
+ 00002625  AD		     1	    lodsd
+ 00002626  EB 0F		    jmp  NUMBER3
+ 00002628  FF 15 00002484 R	NUMBER: call current
+ 0000262E  C6 05 0000261D R	    mov  sign, 0
+	   00
+ 00002635  33 C0		    xor  EAX, EAX
+ 00002637  E8 FFFFFD9F		NUMBER3: call KEY
+ 0000263C  E8 FFFFFD62		    call LETTER
+ 00002641  79 09		    jns  @f
+ 00002643  8B 15 0000247C R	        mov  EDX, shift
+ 00002649  FF 24 82		        jmp  dword ptr [EDX+EAX*4]
+ 0000264C  84 C0		@@: test AL, AL
+ 0000264E  74 D5		    jz   NUMBER0
+ 00002650  8A 80 000025FB R	    mov  AL, [digit-4+EAX]
+ 00002656  F6 05 0000261D R	    test sign, 37o
+	   1F
+ 0000265D  74 02		    jz   @f
+ 0000265F  F7 D8		        neg  EAX
+ 00002661  8B 16		@@: mov  EDX, [ESI]
+ 00002663  0F AF 15		    imul EDX, base
+	   00002480 R
+ 0000266A  03 D0		    add  EDX, EAX
+ 0000266C  89 16		@@: mov  [ESI], EDX
+ 0000266E			NUMBER2: DROP
+ 0000266E  AD		     1	    lodsd
+ 0000266F  C7 05 0000247C R	    mov  shift, offset numb1
+	   00002464 R
+ 00002679  EB BC		    jmp  NUMBER3
+
+ 0000267B			ENDN: DROP
+ 0000267B  AD		     1	    lodsd
+ 0000267C  FF 15 00002494 R	    call [anumber]
+ 00002682  E9 FFFFFE18		    jmp  ACCEPTn
+
+ 00002687			ALPHn: DROP
+ 00002687  AD		     1	    lodsd
+ 00002688  C7 05 0000247C R	ALPH0: mov  shift, offset alpha0
+	   00002428 R
+ 00002692  8D 3D 0000233F R	    lea  EDI, alpha-4
+ 00002698  EB 10		    jmp  @f
+ 0000269A  C7 05 0000247C R	STAR0: mov  shift, offset graph0
+	   00002400 R
+ 000026A4  8D 3D 00002357 R	    lea  EDI, graphics-4
+ 000026AA			@@: DROP
+ 000026AA  AD		     1	    lodsd
+ 000026AB  E9 FFFFFDFF		    jmp  ACCEPT1
+
+ 000026B0  C7 05 0000247C R	ALPH: mov  shift, offset alpha1
+	   0000243C R
+ 000026BA  8D 3D 0000233F R	    lea  EDI, alpha-4
+ 000026C0  EB 10		    jmp  @f
+ 000026C2  C7 05 0000247C R	GRAPH: mov  shift, offset graph1
+	   00002414 R
+ 000026CC  8D 3D 00002357 R	    lea  EDI, graphics-4
+ 000026D2  89 3D 00002478 R	@@: mov  board, EDI
+ 000026D8  E9 FFFFFEBC		    jmp  WORD0
+
+ 000026DD  83 05 0000247C R	first: add  shift, 4*4+4
+	   14
+ 000026E4  E8 FFFFFE5C		    call WORD_
+ 000026E9  FF 15 00002490 R	    call [aword]
+ 000026EF  E9 FFFFFDAB		    jmp  ACCEPT
+
+ 000026F4 18 19 1A 1B 1C      hicon db 30o, 31o, 32o, 33o, 34o, 35o, 36o, 37o
+	   1D 1E 1F
+ 000026FC  20 21 05 13 0A     db 40o, 41o,  5 , 23o, 12o, 20o,  4 , 16o 
+	   10 04 0E
+ 00002704			eDIG1: DUP_
+ 00002704  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002707  89 06	     1	    mov  [ESI], EAX
+ 00002709  51			eDIG: push ECX
+ 0000270A  8A 80 000026F4 R	     mov  AL, hicon[EAX]
+ 00002710  E8 FFFFF8CD		     call EMIT
+ 00002715  59			    pop  ECX
+ 00002716  C3			    ret
+
+ 00002717  C1 C0 04		oDIG: rol  EAX, 4
+				    DUP_
+ 0000271A  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 0000271D  89 06	     1	    mov  [ESI], EAX
+ 0000271F  83 E0 0F		    and  EAX, 0Fh
+ 00002722  C3			    ret
+
+ 00002723  8B D0		hdotn: mov  EDX, EAX
+ 00002725  F7 D8		    neg  EAX
+ 00002727  8D 0C 85		    lea  ECX, [32+EAX*4]
+	   00000020
+				    DROP
+ 0000272E  AD		     1	    lodsd
+ 0000272F  D3 C0		    rol  EAX, CL
+ 00002731  8B CA		    mov  ECX, EDX
+ 00002733  EB 05		    jmp  @f
+ 00002735  B9 00000008		hdot: mov  ECX, 8
+ 0000273A  E8 FFFFFFD8		@@:     call oDIG
+ 0000273F  E8 FFFFFFC5		        call eDIG
+				        next @b
+ 00002744  49		     1	    dec  ECX
+ 00002745  75 F3	     1	    jnz  @b
+				    DROP
+ 00002747  AD		     1	    lodsd
+ 00002748  C3			    ret
+
+ 00002749  B9 00000007		dot: mov  ECX, 7
+ 0000274E  E8 FFFFFFC4		@@:     call oDIG
+ 00002753  75 19		        jnz  @h
+				        DROP
+ 00002755  AD		     1	    lodsd
+				        next @b
+ 00002756  49		     1	    dec  ECX
+ 00002757  75 F5	     1	    jnz  @b
+ 00002759  41			    inc  ECX
+ 0000275A  E8 FFFFFFB8		@@:     call oDIG
+ 0000275F  E8 FFFFFFA5		@h1:    call eDIG
+				        next @b
+ 00002764  49		     1	    dec  ECX
+ 00002765  75 F3	     1	    jnz  @b
+ 00002767  E8 FFFFF8AB		    call space
+				    DROP
+ 0000276C  AD		     1	    lodsd
+ 0000276D  C3			    ret
+ 0000276E  41			@h: inc  ECX
+ 0000276F  EB EE		    jmp  @h1
+
+ 00002771  83 3D 00002480 R	qdot: cmp  base, 10
+	   0A
+ 00002778  75 CF		    jnz  dot
+ 0000277A  8B D0		dot10: mov  EDX, EAX
+ 0000277C  85 D2		    test EDX, EDX
+ 0000277E  79 11		    jns  @f
+ 00002780  F7 DA		        neg  EDX
+				        DUP_
+ 00002782  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002785  89 06	     1	    mov  [ESI], EAX
+ 00002787  B8 00000023		        mov  EAX, 43o
+ 0000278C  E8 FFFFF851		        call EMIT
+ 00002791  B9 00000008		@@: mov  ECX, 8
+ 00002796  8B C2		@@:     mov  EAX, EDX
+ 00002798  33 D2		        xor  EDX, EDX
+ 0000279A  F7 34 8D		        div  tens[ECX*4]
+	   00002A78 R
+ 000027A1  85 C0		        test EAX, EAX
+ 000027A3  75 10		        jnz  D_1
+ 000027A5  49			        dec  ECX
+ 000027A6  79 EE		        jns  @b
+ 000027A8  EB 13		    jmp  D_2
+ 000027AA  8B C2		@@:     mov  EAX, EDX
+ 000027AC  33 D2		        xor  EDX, EDX
+ 000027AE  F7 34 8D		        div  tens[ECX*4]
+	   00002A78 R
+ 000027B5  E8 FFFFFF4A		D_1:    call eDIG1
+ 000027BA  49			        dec  ECX
+ 000027BB  79 ED		        jns  @b
+ 000027BD  8B C2		D_2: mov  EAX, EDX
+ 000027BF  E8 FFFFFF40		    call eDIG1
+ 000027C4  E8 FFFFF84E		    call space ; spcr
+				    DROP
+ 000027C9  AD		     1	    lodsd
+ 000027CA  C3			    ret
+
+ 000027CB			unPACK: DUP_
+ 000027CB  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000027CE  89 06	     1	    mov  [ESI], EAX
+ 000027D0  85 C0		    test EAX, EAX
+ 000027D2  78 0A		    js   @f
+ 000027D4  C1 26 04		        shl  dword ptr [ESI], 4
+ 000027D7  C1 C0 04		        rol  EAX, 4
+ 000027DA  83 E0 07		        and  EAX, 7
+ 000027DD  C3			        ret
+ 000027DE  D1 E0		@@: shl  EAX, 1
+ 000027E0  78 0C		    js   @f
+ 000027E2  C1 26 05		        shl  dword ptr [ESI], 5
+ 000027E5  C1 C0 04		        rol  EAX, 4
+ 000027E8  83 E0 07		        and  EAX, 7
+ 000027EB  34 08		        xor  AL, 10o
+ 000027ED  C3			        ret
+ 000027EE  C1 26 07		@@: shl  dword ptr [ESI], 7
+ 000027F1  C1 C0 06		    rol  EAX, 6
+ 000027F4  83 E0 3F		    and  EAX, 77o
+ 000027F7  2C 10		    sub  AL, 20o
+ 000027F9  C3			    ret
+
+ 000027FA			qRING: DUP_
+ 000027FA  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000027FD  89 06	     1	    mov  [ESI], EAX
+ 000027FF  FF 06		    inc  dword ptr [ESI]
+ 00002801  39 3D 00002AA4 R	    cmp  curs, EDI ; from abort, insert
+ 00002807  75 05		    jnz  @f
+ 00002809  A3 00002AA4 R	        mov  curs, EAX        
+ 0000280E  3B 05 00002AA4 R	@@: cmp  EAX, curs
+ 00002814  74 0A		    jz   RING
+ 00002816  79 06		    jns  @f
+ 00002818  89 3D 00002AAC R	        mov  pcad, EDI
+ 0000281E			@@: DROP
+ 0000281E  AD		     1	    lodsd
+ 0000281F  C3			    ret
+
+ 00002820  89 3D 00002AA8 R	RING: mov  cad, EDI
+ 00002826  81 2D 00001E54 R	    sub  xy, iw*10000h ; bksp
+	   00160000
+				    DUP_
+ 00002830  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002833  89 06	     1	    mov  [ESI], EAX
+ 00002835  B8 00E04000		    mov  EAX, 0e04000h
+ 0000283A  E8 FFFFF695		    call color
+ 0000283F  B8 00000030		    mov  EAX, 60o
+ 00002844  66| 8B 0D		    mov  CX, word ptr xy+2
+	   00001E56 R
+ 0000284B  66| 3B 0D		    cmp  CX, word ptr rm
+	   00001E5C R
+ 00002852  78 10		    js   @f
+ 00002854  E8 FFFFF789		        call EMIT
+ 00002859  81 2D 00001E54 R	        sub  xy, iw*10000h ; bksp
+	   00160000
+ 00002863  C3			        ret
+ 00002864  E9 FFFFF779		@@: jmp  EMIT
+
+ 00002869  66| 8B 0D		rW: mov  CX, word ptr xy+2
+	   00001E56 R
+ 00002870  66| 3B 0D		    cmp  CX, word ptr lm
+	   00001E58 R
+ 00002877  74 05		    jz   @f
+ 00002879  E8 FFFFF978		        call cr
+ 0000287E  E8 FFFFF8A1		@@: call RED
+ 00002883  E9 0000009F		    jmp  TYPE_
+
+ 00002888  E8 FFFFF8A6		gW: call GREEN
+ 0000288D  E9 00000095		    jmp  TYPE_
+ 00002892  E8 FFFFF851		mW: call CYAN
+ 00002897  E9 0000008B		    jmp  TYPE_
+ 0000289C			wW: DUP_
+ 0000289C  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 0000289F  89 06	     1	    mov  [ESI], EAX
+ 000028A1  B8 00FFFF00		    mov  EAX, yellow
+ 000028A6  E8 FFFFF629		    call color
+ 000028AB  EB 7A		    jmp  TYPE_
+
+ 000028AD  81 2D 00001E54 R	type0: sub  xy, iw*10000h ; call bspcr
+	   00160000
+ 000028B7  F7 04 BD		    test dword ptr [-4+EDI*4], -20o
+	   FFFFFFFC
+	   FFFFFFF0
+ 000028C2  75 63		    jnz  type1
+ 000028C4  4F			        dec  EDI
+ 000028C5  89 3D 00002AB0 R	        mov  lcad, EDI
+ 000028CB  E8 FFFFF747		        call space
+ 000028D0  E8 FFFFFF25		        call qRING
+ 000028D5  5A			        pop  EDX ; End of block
+				        DROP
+ 000028D6  AD		     1	    lodsd
+ 000028D7  E9 FFFFF9CD		        jmp  KEYBOARD
+
+ 000028DC  E8 FFFFF5E9		Cap: call white
+				    DUP_
+ 000028E1  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000028E4  89 06	     1	    mov  [ESI], EAX
+ 000028E6  8B 04 BD		    mov  EAX, [-4+EDI*4]
+	   FFFFFFFC
+ 000028ED  83 E0 F0		    and  EAX, -20o
+ 000028F0  E8 FFFFFED6		    call unPACK
+ 000028F5  04 30		    add  AL, 48
+ 000028F7  E8 FFFFF6E6		    call EMIT
+ 000028FC  EB 38		    jmp  type2
+
+ 000028FE  E8 FFFFF5C7		CAPS: call white
+				    DUP_
+ 00002903  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002906  89 06	     1	    mov  [ESI], EAX
+ 00002908  8B 04 BD		    mov  EAX, [-4+EDI*4]
+	   FFFFFFFC
+ 0000290F  83 E0 F0		    and  EAX, -20o
+ 00002912  E8 FFFFFEB4		@@:     call unPACK
+ 00002917  74 2B		        jz   @f
+ 00002919  04 30		        add  AL, 48
+ 0000291B  E8 FFFFF6C2		        call EMIT
+ 00002920  EB F0		        jmp  @b
+
+ 00002922  E8 FFFFF5A3		text: call WHITE
+ 00002927			TYPE_:
+ 00002927			type1: DUP_
+ 00002927  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 0000292A  89 06	     1	    mov  [ESI], EAX
+ 0000292C  8B 04 BD		    mov  EAX, [-4+EDI*4]
+	   FFFFFFFC
+ 00002933  83 E0 F0		    and  EAX, -20o
+ 00002936  E8 FFFFFE90		type2:  call unPACK
+ 0000293B  74 07		        jz   @f
+ 0000293D  E8 FFFFF6A0		        call EMIT
+ 00002942  EB F2		        jmp  type2
+ 00002944  E8 FFFFF6CE		@@: call space
+				    DROP
+ 00002949  AD		     1	    lodsd
+				    DROP
+ 0000294A  AD		     1	    lodsd
+ 0000294B  C3			    ret
+
+ 0000294C  8B 14 BD		gsW: mov  EDX, [-4+EDI*4]
+	   FFFFFFFC
+ 00002953  C1 FA 05		    sar  EDX, 5
+ 00002956  EB 12		    jmp  gnW1
+
+ 00002958  E8 FFFFF79A		var: call MAGENTA
+ 0000295D  E8 FFFFFFC5		    call TYPE_
+ 00002962  8B 14 BD		gnW: mov  EDX, [EDI*4]
+	   00000000
+ 00002969  47			    inc  EDI
+ 0000296A			gnW1: DUP_
+ 0000296A  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 0000296D  89 06	     1	    mov  [ESI], EAX
+ 0000296F  B8 0000F800		    mov  EAX, 0f800h ; Green
+ 00002974  81 3D 00002A9C R	    cmp  bas, offset dot10
+	   0000277A R
+ 0000297E  74 36		    jz   @f        
+ 00002980  B8 0000C000		        mov  EAX, 0c000h ; dark green
+ 00002985  EB 2F		    jmp  @f
+
+ 00002987  8B 14 BD		sW: mov  EDX, [-4+EDI*4]
+	   FFFFFFFC
+ 0000298E  C1 FA 05		    sar  EDX, 5
+ 00002991  EB 08		    jmp  nW1
+
+ 00002993  8B 14 BD		nW: mov  EDX, [EDI*4]
+	   00000000
+ 0000299A  47			    inc  EDI
+ 0000299B			nW1: DUP_
+ 0000299B  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 0000299E  89 06	     1	    mov  [ESI], EAX
+ 000029A0  B8 00FFFF00		    mov  EAX, yellow
+ 000029A5  81 3D 00002A9C R	    cmp  bas, offset dot10
+	   0000277A R
+ 000029AF  74 05		    jz   @f        
+ 000029B1  B8 00C0C000	        mov  EAX, 0c0c000h ; dark yellow
+ 000029B6  E8 FFFFF519		@@: call color
+				    DUP_
+ 000029BB  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000029BE  89 06	     1	    mov  [ESI], EAX
+ 000029C0  8B C2		    mov  EAX, EDX
+ 000029C2  FF 25 00002A9C R	    jmp  [bas]
+
+ 000029C8  E8 FFFFD944		REFRESH: call SHOW
+ 000029CD  E8 FFFFF7D1		    call blank
+ 000029D2  E8 FFFFF686		    call text1
+				    DUP_            ; Counter
+ 000029D7  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 000029DA  89 06	     1	    mov  [ESI], EAX
+ 000029DC  A1 00002AB0 R	    mov  EAX, lcad
+ 000029E1  A3 00002AA8 R	    mov  cad, EAX ; for curs beyond end
+ 000029E6  33 C0		    xor  EAX, EAX
+ 000029E8  8B 3D 00002AA0 R	    mov  EDI, blk
+ 000029EE  C1 E7 08		    shl  EDI, 10-2
+ 000029F1  89 3D 00002AAC R	    mov  pcad, EDI ; for curs=0
+ 000029F7  F7 04 BD		ref1:   test dword ptr [EDI*4], 0fh
+	   00000000
+	   0000000F
+ 00002A02  74 05		        jz   @f
+ 00002A04  E8 FFFFFDF1		            call qRING
+ 00002A09  8B 14 BD		@@:     mov  EDX, [EDI*4]
+	   00000000
+ 00002A10  47			        inc  EDI
+ 00002A11  C7 05 00002A9C R	        mov  bas, offset dot10
+	   0000277A R
+ 00002A1B  F6 C2 10		        test DL, 20o
+ 00002A1E  74 0A		        jz   @f
+ 00002A20  C7 05 00002A9C R	            mov  bas, offset dot
+	   00002749 R
+ 00002A2A  83 E2 0F		@@:     and  EDX, 17o
+ 00002A2D  FF 14 95		        call display[EDX*4]
+	   00002A38 R
+ 00002A34  EB C1		        jmp  ref1
+
+			ALIGN 4
+ 00002A38 000028AD R	
+        display dd offset TYPE0, offset wW, offset nW, offset rW
+	   0000289C R
+	   00002993 R
+	   00002869 R
+ 00002A48  00002888 R	dd offset gW, offset gnW, offset gsW, offset mW
+	   00002962 R
+	   0000294C R
+	   00002892 R
+ 00002A58  00002987 R	dd offset sW, offset text, offset Cap, offset CAPS
+	   00002922 R
+	   000028DC R
+	   000028FE R
+ 00002A68  00002958 R   dd offset var, offset nul, offset nul, offset nul
+	   00000733 R
+	   00000733 R
+	   00000733 R
+ 00002A78 0000000A	tens dd 10, 100, 1000, 10000, 100000, 1000000
+	   00000064
+	   000003E8
+	   00002710
+	   000186A0
+	   000F4240
+ 00002A90  00989680		     dd 10000000, 100000000, 1000000000
+	   05F5E100
+	   3B9ACA00
+ 00002A9C 0000277A R		bas dd offset dot10
+ 00002AA0 00000012		blk    dd 18
+ 00002AA4 00000000		curs   dd 0
+ 00002AA8 00000000		cad    dd 0
+ 00002AAC 00000000		pcad   dd 0
+ 00002AB0 00000000		lcad   dd 0
+ 00002AB4 00097000		trash  dd buffer*4
+ 00002AB8 00000733 R
+                ekeys dd offset nul, offset DEL, offset Eout, offset destack
+	   00002DEF R
+	   00002C94 R
+	   00002CCB R
+ 00002AC8  00002B79 R	
+                dd offset act1, offset act3, offset act4, offset shadow
+	   00002B7D R
+	   00002B81 R
+	   00002C29 R
+ 00002AD8  00002BDF R	
+                dd offset mcur, offset mmcur, offset ppcur, offset pcur
+	   00002BEE R
+	   00002C02 R
+	   00002BE7 R
+ 00002AE8  00002C15 R	
+               dd offset mblk, offset actv, offset act7, offset pblk
+	   00002BB5 R
+	   00002B91 R
+	   00002C0A R
+ 00002AF8  00000733 R	
+               dd offset nul, offset act11, offset act10, offset act9
+	   00002B8D R
+	   00002B89 R
+	   00002B85 R
+ 00002B08  00000733 R	
+               dd offset nul, offset nul, offset nul, offset nul
+	   00000733 R
+	   00000733 R
+	   00000733 R
+ 00002B18 00000733 R	
+              ekbd0 dd offset nul, offset nul, offset nul, offset nul
+	   00000733 R
+	   00000733 R
+	   00000733 R
+ 00002B28  15 25 07 00		     db 25o, 45o,  7 ,  0  ; x  .  i
+ 00002B2C 0F 01 0D 2D		ekbd db 17o,  1 , 15o, 55o ; w  r  g  *
+ 00002B30  0C 16 10 01		     db 14o, 26o, 20o,  1  ; l  u  d  r
+ 00002B34  23 09 0A 2B		     db 43o, 11o, 12o, 53o ; -  m  c  +
+ 00002B38  00 38 3A 02		     db  0 , 70o, 72o,  2  ;    S  C  t
+ 00002B3C  00 00 00 00		     db  0 ,  0 ,  0 ,  0
+ 00002B40  00 00 00 00		     db  0 ,  0 ,  0 ,  0
+ 00002B44 00FFFF00	actc dd yellow, 0, 0ff0000h, 0c000h, 0, 0, 0ffffh
+	   00000000
+	   00FF0000
+	   0000C000
+	   00000000
+	   00000000
+	   0000FFFF
+ 00002B60  00000000		dd 0, 0ffffffh, 0ffffffh, 0ffffffh, 8080ffh
+	   00FFFFFF
+	   00FFFFFF
+	   00FFFFFF
+	   008080FF
+ 00002B74 00000000		vector dd 0
+ 00002B78 01			action db 1
+
+ 00002B79  B0 01		act1: mov  AL, 1
+ 00002B7B  EB 16		    jmp  @f
+ 00002B7D  B0 03		act3: mov  AL, 3
+ 00002B7F  EB 12		    jmp  @f
+ 00002B81  B0 04		act4: mov  AL, 4
+ 00002B83  EB 0E		    jmp  @f
+ 00002B85  B0 09		act9: mov  AL, 9
+ 00002B87  EB 0A		    jmp  @f
+ 00002B89  B0 0A		act10: mov  AL, 10
+ 00002B8B  EB 06		    jmp  @f
+ 00002B8D  B0 0B		act11: mov  AL, 11
+ 00002B8F  EB 02		    jmp  @f
+ 00002B91  B0 07		act7: mov  AL, 7
+ 00002B93  A2 00002B78 R	@@: mov  action, AL
+ 00002B98  8B 04 85		    mov  EAX, [actc-4+EAX*4]
+	   00002B40 R
+ 00002B9F  C7 05 00002490 R	    mov  aword, offset insert
+	   00002D63 R
+ 00002BA9  A3 00002488 R	actn: mov  keyc, EAX
+ 00002BAE  58			    pop  EAX
+				    DROP
+ 00002BAF  AD		     1	    lodsd
+ 00002BB0  E9 FFFFF8EA		    jmp  ACCEPT
+
+ 00002BB5  C6 05 00002B78 R	actv: mov  action, 12
+	   0C
+ 00002BBC  B8 00FF00FF		    mov  EAX, 0ff00ffh ; Magenta
+ 00002BC1  C7 05 00002490 R	    mov  aword, offset @f
+	   00002BCD R
+ 00002BCB  EB DC		    jmp  actn
+
+ 00002BCD			@@: DUP_
+ 00002BCD  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002BD0  89 06	     1	    mov  [ESI], EAX
+ 00002BD2  33 C0		    xor  EAX, EAX
+ 00002BD4  FF 05 00002498 R	    inc  words
+ 00002BDA  E9 00000184		    jmp  insert    
+
+ 00002BDF  FF 0D 00002AA4 R	mcur: dec  curs
+ 00002BE5  79 06		    jns  @f
+ 00002BE7  FF 05 00002AA4 R	pcur: inc  curs
+ 00002BED  C3			@@: ret
+
+ 00002BEE  83 2D 00002AA4 R	mmcur: sub  curs, 8
+	   08
+ 00002BF5  79 0A		    jns  @f
+ 00002BF7  C7 05 00002AA4 R	        mov  curs, 0
+	   00000000
+ 00002C01  C3			@@: ret
+ 00002C02  83 05 00002AA4 R	ppcur: add  curs, 8
+	   08
+ 00002C09  C3			    ret
+
+ 00002C0A  83 05 00002AA0 R	pblk: add  blk, 2
+	   02
+ 00002C11  83 06 02		    add  dword ptr [ESI], 2
+ 00002C14  C3			    ret
+ 00002C15  83 3D 00002AA0 R	mblk: cmp  blk, 20
+	   14
+ 00002C1C  78 0A		    js   @f
+ 00002C1E  83 2D 00002AA0 R	        sub  blk, 2 
+	   02
+ 00002C25  83 2E 02		        sub  dword ptr [ESI], 2
+ 00002C28  C3			@@: ret
+
+ 00002C29  83 35 00002AA0 R	shadow: xor  blk, 1
+	   01
+ 00002C30  83 36 01		    xor  dword ptr [ESI], 1
+ 00002C33  C3			    ret
+
+ 00002C34			E0: DROP
+ 00002C34  AD		     1	    lodsd
+ 00002C35  EB 30		    jmp  @f
+
+ 00002C37  A3 00002AA0 R	edit: mov  blk, EAX
+				    DROP
+ 00002C3C  AD		     1	    lodsd
+ 00002C3D			E:  DUP_
+ 00002C3D  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002C40  89 06	     1	    mov  [ESI], EAX
+ 00002C42  A1 00002AA0 R	    mov  EAX, blk
+ 00002C47  C7 05 00002494 R	    mov  anumber, offset FORMAT
+	   00002D7A R
+ 00002C51  C6 05 00002438 R	    mov  byte ptr alpha0+4*4, 45o ; .
+	   25
+ 00002C58  C7 05 0000242C R	    mov  alpha0+4, offset E0
+	   00002C34 R
+ 00002C62  E8 FFFFFD61		    call REFRESH
+ 00002C67  C7 05 0000247C R	@@: mov  shift, offset ekbd0
+	   00002B18 R
+ 00002C71  C7 05 00002478 R	    mov  board, offset ekbd-4
+	   00002B28 R
+ 00002C7B  C7 05 00002488 R	    mov  keyc, yellow
+	   00FFFF00
+ 00002C85  E8 FFFFF751		@@:     call KEY
+ 00002C8A  FF 14 85		        call ekeys[EAX*4]
+	   00002AB8 R
+				        DROP
+ 00002C91  AD		     1	    lodsd
+ 00002C92  EB F1		        jmp  @b
+
+ 00002C94  58			eout: pop  EAX
+				    DROP
+ 00002C95  AD		     1	    lodsd
+				    DROP
+ 00002C96  AD		     1	    lodsd
+ 00002C97  C7 05 00002490 R	    mov  aword, offset EX1
+	   000003B4 R
+ 00002CA1  C7 05 00002494 R	    mov  anumber, offset nul
+	   00000733 R
+ 00002CAB  C6 05 00002438 R	    mov  byte ptr alpha0+4*4, 0
+	   00
+ 00002CB2  C7 05 0000242C R	    mov  alpha0+4, offset nul0
+	   0000249C R
+ 00002CBC  C7 05 00002488 R	    mov  keyc, yellow
+	   00FFFF00
+ 00002CC6  E9 FFFFF7D4		    jmp  ACCEPT
+
+ 00002CCB  8B 15 00002AB4 R	destack: mov  EDX, trash
+ 00002CD1  81 FA 00097000	    cmp  EDX, buffer*4
+ 00002CD7  75 01		    jnz  @f
+ 00002CD9  C3			        ret
+ 00002CDA  83 EA 08		@@: sub  EDX, 2*4
+ 00002CDD  8B 4A 04		    mov  ECX, [EDX+1*4]
+ 00002CE0  89 0D 00002498 R	    mov  words, ECX
+ 00002CE6			@@:     DUP_
+ 00002CE6  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002CE9  89 06	     1	    mov  [ESI], EAX
+ 00002CEB  8B 02		        mov  EAX, [EDX]
+ 00002CED  83 EA 04		        sub  EDX, 1*4
+				        next @b
+ 00002CF0  49		     1	    dec  ECX
+ 00002CF1  75 F3	     1	    jnz  @b
+ 00002CF3  83 C2 04		    add  EDX, 1*4
+ 00002CF6  89 15 00002AB4 R	    mov  trash, EDX
+
+ 00002CFC  8B 0D 00002AB0 R	insert0: mov  ECX, lcad  ; room available?
+ 00002D02  03 0D 00002498 R	     add  ECX, words
+ 00002D08  33 0D 00002AB0 R	     xor  ECX, lcad
+ 00002D0E  81 E1 FFFFFF00	     and  ECX, -100h
+ 00002D14  74 0B		     jz   insert1
+ 00002D16  8B 0D 00002498 R	         mov  ECX, words ; no
+ 00002D1C			@@:          DROP
+ 00002D1C  AD		     1	    lodsd
+				             next @b
+ 00002D1D  49		     1	    dec  ECX
+ 00002D1E  75 FC	     1	    jnz  @b
+ 00002D20  C3			         ret
+ 00002D21  56			insert1: push ESI
+ 00002D22  8B 35 00002AB0 R	     mov  ESI, lcad
+ 00002D28  8B CE		     mov  ECX, ESI
+ 00002D2A  4E			     dec  ESI
+ 00002D2B  8B FE		     mov  EDI, ESI
+ 00002D2D  03 3D 00002498 R	     add  EDI, words
+ 00002D33  C1 E7 02		     shl  EDI, 2
+ 00002D36  2B 0D 00002AA8 R	     sub  ECX, cad
+ 00002D3C  78 07		     js   @f
+ 00002D3E  C1 E6 02		         shl  ESI, 2
+ 00002D41  FD			         std
+ 00002D42  F3/ A5		         rep movsd
+ 00002D44  FC			         cld
+ 00002D45  5E			@@: pop  ESI
+ 00002D46  C1 EF 02		    shr  EDI, 2
+ 00002D49  47			    inc  EDI
+ 00002D4A  89 3D 00002AA4 R	    mov  curs, EDI ; like abort
+ 00002D50  8B 0D 00002498 R	    mov  ECX, words
+ 00002D56  4F			@@:     dec  EDI
+ 00002D57  89 04 BD		        mov  [EDI*4], EAX
+	   00000000
+				        DROP ; requires cld
+ 00002D5E  AD		     1	    lodsd
+				        next @b
+ 00002D5F  49		     1	    dec  ECX
+ 00002D60  75 F4	     1	    jnz  @b
+ 00002D62  C3			    ret
+
+ 00002D63  E8 FFFFFF94		insert: call insert0
+ 00002D68  8A 0D 00002B78 R	    mov  CL, action
+ 00002D6E  30 0C BD		    xor  [EDI*4], CL
+	   00000000
+ 00002D75  E9 FFFFF725		    jmp  ACCEPT
+
+ 00002D7A  F6 05 00002B78 R	FORMAT: test action, 12o ; ignore 3 and 9
+	   0A
+ 00002D81  74 02		    jz   @f
+				        DROP
+ 00002D83  AD		     1	    lodsd
+ 00002D84  C3			        ret
+ 00002D85  8B D0		@@: mov  EDX, EAX
+ 00002D87  81 E2 FC000000	    and  EDX, 0FC000000h
+ 00002D8D  74 08		    jz   @f
+ 00002D8F  81 FA FC000000	        cmp  EDX, 0FC000000h
+ 00002D95  75 27		        jnz  FORMAT2
+ 00002D97  C1 E0 05		@@: shl  EAX, 5
+ 00002D9A  34 02		    xor  AL, 2 ; 6
+ 00002D9C  80 3D 00002B78 R	    cmp  action, 4
+	   04
+ 00002DA3  74 02		    jz   @f
+ 00002DA5  34 0B		        xor  AL, 13o ; 8
+ 00002DA7  83 3D 00002480 R	@@: cmp  base, 10
+	   0A
+ 00002DAE  74 02		    jz   @f
+ 00002DB0  34 10		        xor  AL, 20o
+ 00002DB2  C7 05 00002498 R	@@: mov  words, 1
+	   00000001
+ 00002DBC  EB A5		    jmp  insert
+
+ 00002DBE			FORMAT2: DUP_
+ 00002DBE  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002DC1  89 06	     1	    mov  [ESI], EAX
+ 00002DC3  B8 00000001		    mov  EAX, 1 ; 5
+ 00002DC8  80 3D 00002B78 R	    cmp  action, 4
+	   04
+ 00002DCF  74 02		    jz   @f
+ 00002DD1  B0 03		        mov  AL, 3 ; 2
+ 00002DD3  83 3D 00002480 R	@@: cmp  base, 10
+	   0A
+ 00002DDA  74 02		    jz   @f
+ 00002DDC  34 10		        xor  AL, 20o
+ 00002DDE  87 06		@@: xchg EAX, [ESI]
+ 00002DE0  C7 05 00002498 R	    mov  words, 2
+	   00000002
+ 00002DEA  E9 FFFFFF74		    jmp  insert
+
+ 00002DEF  E8 00000023		DEL: call enstack
+ 00002DF4  8B 3D 00002AAC R	    mov  EDI, pcad
+ 00002DFA  8B 0D 00002AB0 R	    mov  ECX, lcad
+ 00002E00  2B CF		    sub  ECX, EDI
+ 00002E02  C1 E7 02		    shl  EDI, 2
+ 00002E05  56			    push ESI
+ 00002E06  8B 35 00002AA8 R	     mov  ESI, cad
+ 00002E0C  C1 E6 02		     shl  ESI, 2
+ 00002E0F  F3/ A5		     rep movsd
+ 00002E11  5E			    pop  ESI
+ 00002E12  E9 FFFFFDC8		    jmp  mcur
+
+ 00002E17			enstack: DUP_
+ 00002E17  8D 76 FC	     1	    lea  ESI, [ESI-4]
+ 00002E1A  89 06	     1	    mov  [ESI], EAX
+ 00002E1C  A1 00002AA8 R	    mov  EAX, cad
+ 00002E21  2B 05 00002AAC R	    sub  EAX, pcad
+ 00002E27  74 27		    jz   ens
+ 00002E29  8B C8		      mov  ECX, EAX
+ 00002E2B  92			      xchg EAX, EDX
+ 00002E2C  56			      push ESI
+ 00002E2D  8B 35 00002AA8 R	       mov  ESI, cad
+ 00002E33  8D 34 B5		       lea  ESI, [ESI*4-4]
+	   FFFFFFFC
+ 00002E3A  8B 3D 00002AB4 R	       mov  EDI, trash
+ 00002E40  FD			@@:      std
+ 00002E41  AD			         lodsd
+ 00002E42  FC			         cld
+ 00002E43  AB			         stosd
+				         next @b
+ 00002E44  49		     1	    dec  ECX
+ 00002E45  75 F9	     1	    jnz  @b
+ 00002E47  92			       xchg EAX, EDX
+ 00002E48  AB			       stosd
+ 00002E49  89 3D 00002AB4 R	       mov  trash, EDI
+ 00002E4F  5E			    pop  ESI
+ 00002E50			ens: DROP
+ 00002E50  AD		     1	    lodsd
+ 00002E51  C3			    ret
+
+ 00002E52  5A			pad: pop  EDX
+ 00002E53  89 15 00002B74 R	    mov  vector, EDX
+ 00002E59  81 C2 0000008C	    add  EDX, 28*5
+ 00002E5F  89 15 00002478 R	    mov  board, EDX
+ 00002E65  83 EA 10		    sub  EDX, 4*4
+ 00002E68  89 15 0000247C R	    mov  shift, EDX
+ 00002E6E  E8 FFFFF568		@@:     call KEY
+ 00002E73  8B 15 00002B74 R	        mov  EDX, vector
+ 00002E79  03 D0		        add  EDX, EAX
+ 00002E7B  8D 54 82 05		        lea  EDX, [5+EAX*4+EDX]
+ 00002E7F  03 52 FC		        add  EDX, [-4+EDX]
+				        DROP
+ 00002E82  AD		     1	    lodsd
+ 00002E83  FF D2		        call EDX
+ 00002E85  EB E7		        jmp  @b
+
+				org (0c00h-1)*4
+				;;org (1200h-1)*4
+ 00002FFC  00000000		    dd 0
+				end start
+Microsoft (R) Macro Assembler Version 6.14.8444          10/13/07 07:08:03
+color.asm						     Symbols 2 - 1
+
+
+
+
+Macros:
+
+                N a m e                 Type
+
+DROP . . . . . . . . . . . . . .	Proc
+DUP_ . . . . . . . . . . . . . .	Proc
+next . . . . . . . . . . . . . .	Proc
+
+
+Segments and Groups:
+
+                N a m e             Size   Length   Align   Combine Class
+
+DGROUP . . . . . . . . . . . . .    GROUP
+_TEXT  . . . . . . . . . . . . .    16 Bit  0000    Word    Public  'CODE'	
+_DATA  . . . . . . . . . . . . .    16 Bit  0000    Word    Public  'DATA'	
+only . . . . . . . . . . . . . .    32 Bit  3000    Para    Private 
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+@CodeSize  . . . . . . . . . . .	Number	 0000h	 
+@DataSize  . . . . . . . . . . .	Number	 0000h	 
+@Interface . . . . . . . . . . .	Number	 0000h	 
+@Model . . . . . . . . . . . . .	Number	 0001h	 
+@code  . . . . . . . . . . . . .	Text   	 DGROUP
+@data  . . . . . . . . . . . . .	Text   	 DGROUP
+@fardata?  . . . . . . . . . . .	Text   	 FAR_BSS
+@fardata . . . . . . . . . . . .	Text   	 FAR_DATA
+@h1  . . . . . . . . . . . . . .	L Near	 275F	  only	
+@h . . . . . . . . . . . . . . .	L Near	 276E	  only	
+@stack . . . . . . . . . . . . .	Text   	 DGROUP
+A20  . . . . . . . . . . . . . .	L Near	 00A6	  only	
+ABORT1 . . . . . . . . . . . . .	L Near	 0405	  only	
+ABORT  . . . . . . . . . . . . .	L Near	 03F6	  only	
+ACCEPT1  . . . . . . . . . . . .	L Near	 24AF	  only	
+ACCEPT . . . . . . . . . . . . .	L Near	 249F	  only	
+ACT  . . . . . . . . . . . . . .	L Near	 02F1	  only	
+ALPH0  . . . . . . . . . . . . .	L Near	 2688	  only	
+ALPHn  . . . . . . . . . . . . .	L Near	 2687	  only	
+ALPH . . . . . . . . . . . . . .	L Near	 26B0	  only	
+BLUE . . . . . . . . . . . . . .	L Near	 2115	  only	
+BL_  . . . . . . . . . . . . . .	L Near	 2016	  only	
+CAPS . . . . . . . . . . . . . .	L Near	 28FE	  only	
+COMPILE  . . . . . . . . . . . .	L Near	 060D	  only	
+CYAN . . . . . . . . . . . . . .	L Near	 20E8	  only	
+Cap  . . . . . . . . . . . . . .	L Near	 28DC	  only	
+DEL  . . . . . . . . . . . . . .	L Near	 2DEF	  only	
+DOWN . . . . . . . . . . . . . .	L Near	 217C	  only	
+D_1  . . . . . . . . . . . . . .	L Near	 27B5	  only	
+D_2  . . . . . . . . . . . . . .	L Near	 27BD	  only	
+E0 . . . . . . . . . . . . . . .	L Near	 2C34	  only	
+ECHO_  . . . . . . . . . . . . .	L Near	 214D	  only	
+EIGHT  . . . . . . . . . . . . .	L Near	 225D	  only	
+ENDN . . . . . . . . . . . . . .	L Near	 267B	  only	
+EX1  . . . . . . . . . . . . . .	L Near	 03B4	  only	
+E  . . . . . . . . . . . . . . .	L Near	 2C3D	  only	
+FIND . . . . . . . . . . . . . .	L Near	 03A0	  only	
+FORMAT2  . . . . . . . . . . . .	L Near	 2DBE	  only	
+FORMAT . . . . . . . . . . . . .	L Near	 2D7A	  only	
+FORTH  . . . . . . . . . . . . .	L Near	 0462	  only	
+FOUR1  . . . . . . . . . . . . .	L Near	 2272	  only	
+FOUR . . . . . . . . . . . . . .	L Near	 226D	  only	
+FULL . . . . . . . . . . . . . .	L Near	 2512	  only	
+GRAPH  . . . . . . . . . . . . .	L Near	 26C2	  only	
+GREEN  . . . . . . . . . . . . .	L Near	 2133	  only	
+Godd . . . . . . . . . . . . . .	Number	 0009F448h   
+Gods . . . . . . . . . . . . . .	Number	 000A0000h   
+God  . . . . . . . . . . . . . .	DWord	 02C5	  only	
+H  . . . . . . . . . . . . . . .	DWord	 07AC	  only	
+INTER  . . . . . . . . . . . . .	L Near	 0748	  only	
+KEYBOARD . . . . . . . . . . . .	L Near	 22A9	  only	
+KEY  . . . . . . . . . . . . . .	L Near	 23DB	  only	
+LETTER . . . . . . . . . . . . .	L Near	 23A3	  only	
+LJ0  . . . . . . . . . . . . . .	L Near	 24FF	  only	
+LJ . . . . . . . . . . . . . . .	L Near	 250B	  only	
+LMs  . . . . . . . . . . . . . .	L Near	 2210	  only	
+LOAD . . . . . . . . . . . . . .	L Near	 0741	  only	
+MACRO_ . . . . . . . . . . . . .	L Near	 0448	  only	
+MAGENTA  . . . . . . . . . . . .	L Near	 20F7	  only	
+MINUS  . . . . . . . . . . . . .	L Near	 261E	  only	
+NUMBER0  . . . . . . . . . . . .	L Near	 2625	  only	
+NUMBER2  . . . . . . . . . . . .	L Near	 266E	  only	
+NUMBER3  . . . . . . . . . . . .	L Near	 2637	  only	
+NUMBER . . . . . . . . . . . . .	L Near	 2628	  only	
+NUM  . . . . . . . . . . . . . .	L Near	 0645	  only	
+PACK . . . . . . . . . . . . . .	L Near	 24D3	  only	
+PAUSE  . . . . . . . . . . . . .	L Near	 02D4	  only	
+READ . . . . . . . . . . . . . .	L Near	 01B9	  only	
+RED  . . . . . . . . . . . . . .	L Near	 2124	  only	
+REFRESH  . . . . . . . . . . . .	L Near	 29C8	  only	
+RIGHT  . . . . . . . . . . . . .	L Near	 2166	  only	
+RING . . . . . . . . . . . . . .	L Near	 2820	  only	
+RMs  . . . . . . . . . . . . . .	L Near	 2217	  only	
+ROUND  . . . . . . . . . . . . .	L Near	 02C0	  only	
+SHORT_ . . . . . . . . . . . . .	L Near	 062B	  only	
+SILVER . . . . . . . . . . . . .	L Near	 2106	  only	
+SPACE  . . . . . . . . . . . . .	L Near	 2017	  only	
+SPIN . . . . . . . . . . . . . .	L Near	 0100	  only	
+STAR0  . . . . . . . . . . . . .	L Near	 269A	  only	
+TOP  . . . . . . . . . . . . . .	L Near	 21CD	  only	
+TYPE_  . . . . . . . . . . . . .	L Near	 2927	  only	
+WORD0  . . . . . . . . . . . . .	L Near	 2599	  only	
+WORD1  . . . . . . . . . . . . .	L Near	 2570	  only	
+WORD_  . . . . . . . . . . . . .	L Near	 2545	  only	
+WRITE  . . . . . . . . . . . . .	L Near	 01D6	  only	
+Xn . . . . . . . . . . . . . . .	L Near	 25F8	  only	
+X  . . . . . . . . . . . . . . .	L Near	 2532	  only	
+ZERO . . . . . . . . . . . . . .	L Near	 2198	  only	
+aDEFINE  . . . . . . . . . . . .	DWord	 0768	  only	
+acceptn  . . . . . . . . . . . .	L Near	 249F	  only	
+act10  . . . . . . . . . . . . .	L Near	 2B89	  only	
+act11  . . . . . . . . . . . . .	L Near	 2B8D	  only	
+act1 . . . . . . . . . . . . . .	L Near	 2B79	  only	
+act3 . . . . . . . . . . . . . .	L Near	 2B7D	  only	
+act4 . . . . . . . . . . . . . .	L Near	 2B81	  only	
+act7 . . . . . . . . . . . . . .	L Near	 2B91	  only	
+act9 . . . . . . . . . . . . . .	L Near	 2B85	  only	
+actc . . . . . . . . . . . . . .	DWord	 2B44	  only	
+action . . . . . . . . . . . . .	Byte	 2B78	  only	
+actn . . . . . . . . . . . . . .	L Near	 2BA9	  only	
+actv . . . . . . . . . . . . . .	L Near	 2BB5	  only	
+adup . . . . . . . . . . . . . .	L Near	 050D	  only	
+alit . . . . . . . . . . . . . .	L Near	 0588	  only	
+alpha0 . . . . . . . . . . . . .	DWord	 2428	  only	
+alpha1 . . . . . . . . . . . . .	DWord	 243C	  only	
+alpha  . . . . . . . . . . . . .	Byte	 2343	  only	
+anumber  . . . . . . . . . . . .	DWord	 2494	  only	
+ati0 . . . . . . . . . . . . . .	L Near	 1F15	  only	
+at . . . . . . . . . . . . . . .	L Near	 221E	  only	
+aword  . . . . . . . . . . . . .	DWord	 2490	  only	
+b16  . . . . . . . . . . . . . .	L Near	 1FAA	  only	
+b32  . . . . . . . . . . . . . .	L Near	 1FC2	  only	
+base . . . . . . . . . . . . . .	DWord	 2480	  only	
+bas  . . . . . . . . . . . . . .	DWord	 2A9C	  only	
+begin  . . . . . . . . . . . . .	L Near	 06C5	  only	
+bit16  . . . . . . . . . . . . .	L Near	 1FA1	  only	
+bit32  . . . . . . . . . . . . .	L Near	 1FB9	  only	
+bits . . . . . . . . . . . . . .	Byte	 24CB	  only	
+blank  . . . . . . . . . . . . .	L Near	 21A3	  only	
+blk  . . . . . . . . . . . . . .	DWord	 2AA0	  only	
+board  . . . . . . . . . . . . .	DWord	 2478	  only	
+boot . . . . . . . . . . . . . .	L Near	 1DD0	  only	
+box  . . . . . . . . . . . . . .	L Near	 2099	  only	
+buffer . . . . . . . . . . . . .	Number	 00025C00h   
+cNUM . . . . . . . . . . . . . .	L Near	 0561	  only	
+cSHORT . . . . . . . . . . . . .	L Near	 0571	  only	
+c_ . . . . . . . . . . . . . . .	L Near	 0336	  only	
+cad  . . . . . . . . . . . . . .	DWord	 2AA8	  only	
+call_  . . . . . . . . . . . . .	L Near	 05EE	  only	
+cdrop  . . . . . . . . . . . . .	L Near	 04C4	  only	
+cdup . . . . . . . . . . . . . .	L Near	 04F5	  only	
+chars  . . . . . . . . . . . . .	DWord	 248C	  only	
+class  . . . . . . . . . . . . .	DWord	 07B4	  only	
+clip . . . . . . . . . . . . . .	L Near	 1F69	  only	
+cmd0 . . . . . . . . . . . . . .	L Near	 0146	  only	
+cmd1 . . . . . . . . . . . . . .	L Near	 0149	  only	
+cmdf . . . . . . . . . . . . . .	L Near	 0268	  only	
+cmdi . . . . . . . . . . . . . .	L Near	 0125	  only	
+cmd  . . . . . . . . . . . . . .	L Near	 013E	  only	
+cold . . . . . . . . . . . . . .	L Near	 00D3	  only	
+color  . . . . . . . . . . . . .	L Near	 1ED4	  only	
+comma1 . . . . . . . . . . . . .	L Near	 0679	  only	
+comma2 . . . . . . . . . . . . .	L Near	 0680	  only	
+comma3 . . . . . . . . . . . . .	L Near	 0687	  only	
+command  . . . . . . . . . . . .	Byte	 0025	  only	
+comma  . . . . . . . . . . . . .	L Near	 065D	  only	
+copy . . . . . . . . . . . . . .	L Near	 1DE9	  only	
+cr . . . . . . . . . . . . . . .	L Near	 21F6	  only	
+current  . . . . . . . . . . . .	DWord	 2484	  only	
+curs . . . . . . . . . . . . . .	DWord	 2AA4	  only	
+cylinder . . . . . . . . . . . .	Byte	 0027	  only	
+debug  . . . . . . . . . . . . .	L Near	 1E10	  only	
+decimal  . . . . . . . . . . . .	L Near	 25A1	  only	
+destack  . . . . . . . . . . . .	L Near	 2CCB	  only	
+dev  . . . . . . . . . . . . . .	L Near	 1EEB	  only	
+digit  . . . . . . . . . . . . .	Byte	 25FF	  only	
+display  . . . . . . . . . . . .	DWord	 2A38	  only	
+displ  . . . . . . . . . . . . .	DWord	 1EA4	  only	
+dma  . . . . . . . . . . . . . .	L Near	 018E	  only	
+dot10  . . . . . . . . . . . . .	L Near	 277A	  only	
+dot  . . . . . . . . . . . . . .	L Near	 2749	  only	
+eDIG1  . . . . . . . . . . . . .	L Near	 2704	  only	
+eDIG . . . . . . . . . . . . . .	L Near	 2709	  only	
+edit . . . . . . . . . . . . . .	L Near	 2C37	  only	
+ekbd0  . . . . . . . . . . . . .	DWord	 2B18	  only	
+ekbd . . . . . . . . . . . . . .	Byte	 2B2C	  only	
+ekeys  . . . . . . . . . . . . .	DWord	 2AB8	  only	
+emit2  . . . . . . . . . . . . .	L Near	 2022	  only	
+emit . . . . . . . . . . . . . .	L Near	 1FE2	  only	
+empty  . . . . . . . . . . . . .	L Near	 0361	  only	
+enstack  . . . . . . . . . . . .	L Near	 2E17	  only	
+ens  . . . . . . . . . . . . . .	L Near	 2E50	  only	
+eout . . . . . . . . . . . . . .	L Near	 2C94	  only	
+erase  . . . . . . . . . . . . .	L Near	 1DD6	  only	
+ex2  . . . . . . . . . . . . . .	L Near	 03E4	  only	
+execute  . . . . . . . . . . . .	L Near	 03CE	  only	
+fifof  . . . . . . . . . . . . .	L Near	 1F4B	  only	
+first  . . . . . . . . . . . . .	L Near	 26DD	  only	
+flop . . . . . . . . . . . . . .	L Near	 0204	  only	
+fore . . . . . . . . . . . . . .	DWord	 1EA8	  only	
+forth0 . . . . . . . . . . . . .	DWord	 09E0	  only	
+forth1 . . . . . . . . . . . . .	DWord	 0ACC	  only	
+forth2 . . . . . . . . . . . . .	DWord	 14E4	  only	
+forthd . . . . . . . . . . . . .	L Near	 0467	  only	
+forths . . . . . . . . . . . . .	DWord	 07C4	  only	
+fov_ . . . . . . . . . . . . . .	L Near	 1E7E	  only	
+fov  . . . . . . . . . . . . . .	DWord	 1E64	  only	
+frame  . . . . . . . . . . . . .	DWord	 1EA0	  only	
+gW . . . . . . . . . . . . . . .	L Near	 2888	  only	
+gdt0 . . . . . . . . . . . . . .	Word	 0040	  only	
+gdt  . . . . . . . . . . . . . .	Word	 0034	  only	
+gnW1 . . . . . . . . . . . . . .	L Near	 296A	  only	
+gnW  . . . . . . . . . . . . . .	L Near	 2962	  only	
+graph0 . . . . . . . . . . . . .	DWord	 2400	  only	
+graph1 . . . . . . . . . . . . .	DWord	 2414	  only	
+graphics . . . . . . . . . . . .	Byte	 235B	  only	
+graphic  . . . . . . . . . . . .	L Near	 1F4C	  only	
+gsW  . . . . . . . . . . . . . .	L Near	 294C	  only	
+hc . . . . . . . . . . . . . . .	Number	 002Eh	 
+hdotn  . . . . . . . . . . . . .	L Near	 2723	  only	
+hdot . . . . . . . . . . . . . .	L Near	 2735	  only	
+here . . . . . . . . . . . . . .	L Near	 06CB	  only	
+hex  . . . . . . . . . . . . . .	L Near	 25C0	  only	
+hicon  . . . . . . . . . . . . .	Byte	 26F4	  only	
+history  . . . . . . . . . . . .	Byte	 2142	  only	
+hp . . . . . . . . . . . . . . .	Number	 0400h	 
+icons  . . . . . . . . . . . . .	Number	 3000h	 
+ih . . . . . . . . . . . . . . .	Number	 001Eh	 
+insert0  . . . . . . . . . . . .	L Near	 2CFC	  only	
+insert1  . . . . . . . . . . . .	L Near	 2D21	  only	
+insert . . . . . . . . . . . . .	L Near	 2D63	  only	
+iw . . . . . . . . . . . . . . .	Number	 0016h	 
+jump . . . . . . . . . . . . . .	L Near	 0734	  only	
+keyc . . . . . . . . . . . . . .	DWord	 2488	  only	
+keys . . . . . . . . . . . . . .	Byte	 23B1	  only	
+last_  . . . . . . . . . . . . .	L Near	 1E94	  only	
+last . . . . . . . . . . . . . .	DWord	 07B0	  only	
+lcad . . . . . . . . . . . . . .	DWord	 2AB0	  only	
+less . . . . . . . . . . . . . .	L Near	 071D	  only	
+line . . . . . . . . . . . . . .	L Near	 207B	  only	
+list . . . . . . . . . . . . . .	DWord	 07B8	  only	
+literal  . . . . . . . . . . . .	L Near	 0592	  only	
+lit  . . . . . . . . . . . . . .	DWord	 079C	  only	
+lm . . . . . . . . . . . . . . .	DWord	 1E58	  only	
+loc  . . . . . . . . . . . . . .	L Near	 0076	  only	
+mFIND  . . . . . . . . . . . . .	L Near	 0390	  only	
+mW . . . . . . . . . . . . . . .	L Near	 2892	  only	
+macro0 . . . . . . . . . . . . .	DWord	 07C8	  only	
+macro1 . . . . . . . . . . . . .	DWord	 07E0	  only	
+macro2 . . . . . . . . . . . . .	DWord	 12CC	  only	
+macrod . . . . . . . . . . . . .	L Near	 044D	  only	
+macros . . . . . . . . . . . . .	DWord	 07C0	  only	
+maind  . . . . . . . . . . . . .	Number	 0009D120h   
+mains  . . . . . . . . . . . . .	Number	 0009DCD8h   
+main . . . . . . . . . . . . . .	DWord	 02CE	  only	
+mark . . . . . . . . . . . . . .	L Near	 033C	  only	
+mblk . . . . . . . . . . . . . .	L Near	 2C15	  only	
+mcur . . . . . . . . . . . . . .	L Near	 2BDF	  only	
+me . . . . . . . . . . . . . . .	DWord	 02B8	  only	
+mk . . . . . . . . . . . . . . .	DWord	 07A0	  only	
+mmcur  . . . . . . . . . . . . .	L Near	 2BEE	  only	
+ms . . . . . . . . . . . . . . .	Number	 00028870h   
+nW1  . . . . . . . . . . . . . .	L Near	 299B	  only	
+nW . . . . . . . . . . . . . . .	L Near	 2993	  only	
+nc_  . . . . . . . . . . . . . .	L Near	 1E68	  only	
+nc . . . . . . . . . . . . . . .	DWord	 0030	  only	
+north  . . . . . . . . . . . . .	L Near	 1EE0	  only	
+no . . . . . . . . . . . . . . .	L Near	 20E5	  only	
+nul0 . . . . . . . . . . . . . .	L Near	 249C	  only	
+nul  . . . . . . . . . . . . . .	L Near	 0733	  only	
+numb0  . . . . . . . . . . . . .	DWord	 2450	  only	
+numb1  . . . . . . . . . . . . .	DWord	 2464	  only	
+numbers  . . . . . . . . . . . .	Byte	 2373	  only	
+oDIG . . . . . . . . . . . . . .	L Near	 2717	  only	
+octals . . . . . . . . . . . . .	Byte	 238B	  only	
+octal  . . . . . . . . . . . . .	L Near	 25DF	  only	
+octant . . . . . . . . . . . . .	L Near	 223E	  only	
+onoff  . . . . . . . . . . . . .	L Near	 017E	  only	
+pAT  . . . . . . . . . . . . . .	L Near	 222D	  only	
+pad  . . . . . . . . . . . . . .	L Near	 2E52	  only	
+pblk . . . . . . . . . . . . . .	L Near	 2C0A	  only	
+pcad . . . . . . . . . . . . . .	DWord	 2AAC	  only	
+pcur . . . . . . . . . . . . . .	L Near	 2BE7	  only	
+ppcur  . . . . . . . . . . . . .	L Near	 2C02	  only	
+protected  . . . . . . . . . . .	L Near	 0097	  only	
+q1 . . . . . . . . . . . . . . .	L Near	 0712	  only	
+qCOMPILE . . . . . . . . . . . .	L Near	 05BD	  only	
+qIGNORE  . . . . . . . . . . . .	L Near	 0724	  only	
+qRING  . . . . . . . . . . . . .	L Near	 27FA	  only	
+qcr  . . . . . . . . . . . . . .	L Near	 21E6	  only	
+qdot . . . . . . . . . . . . . .	L Near	 2771	  only	
+qdup . . . . . . . . . . . . . .	L Near	 04DA	  only	
+qlit . . . . . . . . . . . . . .	L Near	 06D6	  only	
+rW . . . . . . . . . . . . . . .	L Near	 2869	  only	
+readf1 . . . . . . . . . . . . .	L Near	 0231	  only	
+readf  . . . . . . . . . . . . .	L Near	 021F	  only	
+readyf . . . . . . . . . . . . .	L Near	 0279	  only	
+ready  . . . . . . . . . . . . .	L Near	 012D	  only	
+ref1 . . . . . . . . . . . . . .	L Near	 29F7	  only	
+relocate . . . . . . . . . . . .	L Near	 0086	  only	
+rgb  . . . . . . . . . . . . . .	L Near	 1EB4	  only	
+rm . . . . . . . . . . . . . . .	DWord	 1E5C	  only	
+sDEFINE  . . . . . . . . . . . .	L Near	 0441	  only	
+sW . . . . . . . . . . . . . . .	L Near	 2987	  only	
+screen . . . . . . . . . . . . .	DWord	 02BC	  only	
+seekf  . . . . . . . . . . . . .	L Near	 024E	  only	
+seek . . . . . . . . . . . . . .	L Near	 0174	  only	
+semi . . . . . . . . . . . . . .	L Near	 068E	  only	
+sense_ . . . . . . . . . . . . .	L Near	 015B	  only	
+shadow . . . . . . . . . . . . .	L Near	 2C29	  only	
+shift  . . . . . . . . . . . . .	DWord	 247C	  only	
+show0  . . . . . . . . . . . . .	L Near	 030B	  only	
+show . . . . . . . . . . . . . .	L Near	 0311	  only	
+sign . . . . . . . . . . . . . .	Byte	 261D	  only	
+spaces . . . . . . . . . . . . .	DWord	 075C	  only	
+sps  . . . . . . . . . . . . . .	L Near	 1E89	  only	
+stack  . . . . . . . . . . . . .	L Near	 2288	  only	
+start0 . . . . . . . . . . . . .	L Near	 0058	  only	
+start1 . . . . . . . . . . . . .	L Near	 028A	  only	
+start2 . . . . . . . . . . . . .	L Near	 00F6	  only	
+start  . . . . . . . . . . . . .	L Near	 0000	  only	
+stop . . . . . . . . . . . . . .	L Near	 017C	  only	
+switch . . . . . . . . . . . . .	L Near	 1F4D	  only	
+tens . . . . . . . . . . . . . .	DWord	 2A78	  only	
+text1  . . . . . . . . . . . . .	L Near	 205D	  only	
+text . . . . . . . . . . . . . .	L Near	 2922	  only	
+then . . . . . . . . . . . . . .	L Near	 06B2	  only	
+transfer . . . . . . . . . . . .	L Near	 013C	  only	
+trash  . . . . . . . . . . . . .	DWord	 2AB4	  only	
+type0  . . . . . . . . . . . . .	L Near	 28AD	  only	
+type1  . . . . . . . . . . . . .	L Near	 2927	  only	
+type2  . . . . . . . . . . . . .	L Near	 2936	  only	
+unPACK . . . . . . . . . . . . .	L Near	 27CB	  only	
+unPAUSE  . . . . . . . . . . . .	L Near	 02E6	  only	
+us . . . . . . . . . . . . . . .	Number	 00A6h	 
+var1 . . . . . . . . . . . . . .	L Near	 0513	  only	
+variable . . . . . . . . . . . .	L Near	 0520	  only	
+var  . . . . . . . . . . . . . .	L Near	 2958	  only	
+vc . . . . . . . . . . . . . . .	Number	 0019h	 
+vector . . . . . . . . . . . . .	DWord	 2B74	  only	
+vesa . . . . . . . . . . . . . .	Number	 4117h	 
+vp . . . . . . . . . . . . . . .	Number	 0300h	 
+wW . . . . . . . . . . . . . . .	L Near	 289C	  only	
+warm . . . . . . . . . . . . . .	L Near	 0285	  only	
+white  . . . . . . . . . . . . .	L Near	 1ECA	  only	
+words  . . . . . . . . . . . . .	DWord	 2498	  only	
+writef . . . . . . . . . . . . .	L Near	 023A	  only	
+xc . . . . . . . . . . . . . . .	DWord	 1EAC	  only	
+xy_  . . . . . . . . . . . . . .	L Near	 1E73	  only	
+xycr . . . . . . . . . . . . . .	DWord	 1E60	  only	
+xy . . . . . . . . . . . . . . .	DWord	 1E54	  only	
+yc . . . . . . . . . . . . . . .	DWord	 1EB0	  only	
+yellow . . . . . . . . . . . . .	Number	 00FFFF00h   
+
+	   0 Warnings
+	   0 Errors

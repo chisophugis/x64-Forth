@@ -1,0 +1,25 @@
+; IDEA
+; have the control block actually be a real block, with all of the
+; variables being "live updating" (magenta) variables (will want to have
+; each one have its own word anyway). this would make a good "first block"
+; for the editor, since it already contains all of its values.
+
+; IDEA
+; vector each keystroke with one level of indirection. first the key
+; indexes into a *byte* table, to save space. Then the value at that byte
+; is used to vector through a table of code pointers, passing the key's
+; value as an argument.
+
+; RANDOM
+; backspace puts words onto a stack, "paste" puts words from the top of the
+; stack in (and puts the cursor AFTER) the pasted word
+
+; RANDOM
+; can have a magic "circular stack" by using XMM shuffles
+
+; NOTE
+; for the implementation of */ and / that I have in Forth, the remainder is
+; left in the A register.
+
+; NOTE Chuck Moore's colorForth optimizes loads and stores to literal
+; (fixed) addresses *so that they don't disturb A*.

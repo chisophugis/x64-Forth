@@ -1,0 +1,3 @@
+#!/usr/bin/env zsh
+
+cat /proc/$(ps -e | grep a.out | cut -d' ' -f1)/maps

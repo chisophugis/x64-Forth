@@ -1,0 +1,5 @@
+Look at the "primitive" set of things that you are trying to create. If any
+of the primitives can be simulated with any of the other primitives, then
+you probably need to rethink your design.
+
+Only as an optimization should that kind of redundancy really ever happen.

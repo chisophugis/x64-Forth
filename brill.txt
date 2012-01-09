@@ -1,0 +1,5 @@
+Using colors to indicate the roles of different words is brilliant. It is
+SOOOO much clearer to just have a word be cyan, instead of saying
+	postpone foo
+Like, the difference is the difference between instantly and intuitively
+recognizing it and having to parse through it.

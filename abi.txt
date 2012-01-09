@@ -1,0 +1,48 @@
+		AMD64 C ABI
+
+rax | r0  | ret#1
+rcx | r1  | arg#4
+rdx | r2  | arg#3 ret#2
+rbx | r3  | callee saved
+rsp | r4  |
+rbp | r5  | callee saved
+rsi | r6  | arg#2
+rdi | r7  | arg#1
+    | r8  | arg#5
+    | r9  | arg#6
+    | r10 |
+    | r11 |
+    | r12 | callee saved
+    | r13 | callee saved
+    | r14 | callee saved
+    | r15 | callee saved
+
+
+
+r3 r5 r12-r15 "belong" to the caller
+(i.e., are callee-saved)
+
+DF must be clear on function entry and return
+
+once registers are assigned, the arguments passed in memory are pushed on
+the stack in right-to-left order (i.e., the first vararg is the closest to
+the top of the stack).
+
+in a varargs call, 'al' specifies the number of vector registers used
+
+
+
+None of these are preserved across function calls:
+mmx0-mmx7 : temporaries
+xmm0-xmm1 : pass and return floating point args
+xmm2-xmm7 : pass floating point args
+xmm8-xmm15 : temporaries
+
+If the return type has class MEMORY, then the caller allocates space for it
+on the stack and passes a pointer to it in RDI as a "hidden" first argument.
+On return, RAX contains the address that has been passed by the caller
+in RDI.
+If the return type is of class INTEGER, then the value is returned in the
+next available register in the sequence RAX RDX.
+If the return type is SSE, then the next available register in the sequence
+XMM0 XMM1 is used.
